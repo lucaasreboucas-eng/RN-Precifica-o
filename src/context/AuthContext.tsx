@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseClient } from '../lib/supabase';
 import type { UserProfile, LoginCredentials } from '../types/auth';
 
 interface AuthContextType {
@@ -141,8 +141,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         // 2. Check Supabase managed_users table if configured
-        if (isConfigured && supabase) {
-          const { data: managedUser } = await supabase
+        const client = supabase || (await getSupabaseClient());
+        if (client) {
+          const { data: managedUser } = await client
             .from('managed_users')
             .select('*, profiles(name)')
             .ilike('email', cleanEmail)
@@ -180,7 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           // 3. Try Supabase Auth
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const { data, error } = await client.auth.signInWithPassword({
             email: email.trim(),
             password,
           });

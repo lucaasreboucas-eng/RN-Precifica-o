@@ -14,6 +14,9 @@ import {
   Building,
   Layers,
   Paperclip,
+  Check,
+  X,
+  BookmarkCheck,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
@@ -36,7 +39,9 @@ interface OrcamentoFormViewProps {
   onCancel: () => void;
 }
 
-const DEFAULT_PARAMS: PricingParameters = {
+const DEFAULT_PARAMS_STORAGE_KEY = 'rn_precificacao_default_params_v1';
+
+const FALLBACK_DEFAULT_PARAMS: PricingParameters = {
   margemLucroPercent: 30, // 30%
   impostoFaturamentoPercent: 6, // 6%
   taxaAdministrativaPercent: 5, // 5%
@@ -44,6 +49,97 @@ const DEFAULT_PARAMS: PricingParameters = {
   issPercent: 2, // 2%
   antecipacaoPercent: 1.5, // 1.5%
 };
+
+const loadSavedDefaultParams = (): PricingParameters => {
+  try {
+    const raw = localStorage.getItem(DEFAULT_PARAMS_STORAGE_KEY);
+    if (!raw) return { ...FALLBACK_DEFAULT_PARAMS };
+    const parsed = JSON.parse(raw);
+    return {
+      margemLucroPercent:
+        typeof parsed.margemLucroPercent === 'number' && !isNaN(parsed.margemLucroPercent)
+          ? parsed.margemLucroPercent
+          : FALLBACK_DEFAULT_PARAMS.margemLucroPercent,
+      impostoFaturamentoPercent:
+        typeof parsed.impostoFaturamentoPercent === 'number' && !isNaN(parsed.impostoFaturamentoPercent)
+          ? parsed.impostoFaturamentoPercent
+          : FALLBACK_DEFAULT_PARAMS.impostoFaturamentoPercent,
+      taxaAdministrativaPercent:
+        typeof parsed.taxaAdministrativaPercent === 'number' && !isNaN(parsed.taxaAdministrativaPercent)
+          ? parsed.taxaAdministrativaPercent
+          : FALLBACK_DEFAULT_PARAMS.taxaAdministrativaPercent,
+      comissaoVendedorPercent:
+        typeof parsed.comissaoVendedorPercent === 'number' && !isNaN(parsed.comissaoVendedorPercent)
+          ? parsed.comissaoVendedorPercent
+          : FALLBACK_DEFAULT_PARAMS.comissaoVendedorPercent,
+      issPercent:
+        typeof parsed.issPercent === 'number' && !isNaN(parsed.issPercent)
+          ? parsed.issPercent
+          : FALLBACK_DEFAULT_PARAMS.issPercent,
+      antecipacaoPercent:
+        typeof parsed.antecipacaoPercent === 'number' && !isNaN(parsed.antecipacaoPercent)
+          ? parsed.antecipacaoPercent
+          : FALLBACK_DEFAULT_PARAMS.antecipacaoPercent,
+    };
+  } catch {
+    return { ...FALLBACK_DEFAULT_PARAMS };
+  }
+};
+
+type ParamKey = keyof PricingParameters;
+
+interface ParamFieldMeta {
+  key: ParamKey;
+  label: string;
+  badgeText: string;
+  badgeClass: string;
+  description: string;
+}
+
+const PARAM_FIELDS: ParamFieldMeta[] = [
+  {
+    key: 'margemLucroPercent',
+    label: 'Margem de Lucro (%)',
+    badgeText: 'Sobre Custo',
+    badgeClass: 'text-amber-700 font-bold bg-amber-100/70',
+    description: 'Aplicada diretamente sobre o Custo Total dos itens.',
+  },
+  {
+    key: 'impostoFaturamentoPercent',
+    label: 'Imposto sobre Faturamento (%)',
+    badgeText: 'Sobre Venda',
+    badgeClass: 'text-slate-600 bg-slate-200 font-medium',
+    description: 'Calculado sobre o Valor Final Faturado.',
+  },
+  {
+    key: 'taxaAdministrativaPercent',
+    label: 'Taxa Administrativa (%)',
+    badgeText: 'Sobre Venda',
+    badgeClass: 'text-slate-600 bg-slate-200 font-medium',
+    description: 'Deduzida da venda antes da comissão.',
+  },
+  {
+    key: 'comissaoVendedorPercent',
+    label: 'Comissão do Vendedor (%)',
+    badgeText: 'Sobre Líquido Empresa',
+    badgeClass: 'text-emerald-700 font-bold bg-emerald-100',
+    description: 'Calculada sobre o recebido após a Taxa Administrativa.',
+  },
+  {
+    key: 'issPercent',
+    label: 'ISS sobre Faturamento (%)',
+    badgeText: 'Sobre Venda',
+    badgeClass: 'text-slate-600 bg-slate-200 font-medium',
+    description: 'Calculado sobre o Valor Final Faturado.',
+  },
+  {
+    key: 'antecipacaoPercent',
+    label: 'Antecipação sobre Faturamento (%)',
+    badgeText: 'Sobre Venda',
+    badgeClass: 'text-slate-600 bg-slate-200 font-medium',
+    description: 'Calculada sobre o Valor Final Faturado.',
+  },
+];
 
 const DEFAULT_ITEMS: OrcamentoItem[] = [];
 
@@ -69,10 +165,95 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     initialOrcamento?.responsavel || usuarioLogado
   );
 
-  // Parâmetros do Orçamento
-  const [params, setParams] = useState<PricingParameters>(
-    initialOrcamento?.parametros || DEFAULT_PARAMS
+  // Valores padrão salvos para novos orçamentos
+  const [defaultParams, setDefaultParams] = useState<PricingParameters>(() =>
+    loadSavedDefaultParams()
   );
+
+  // Parâmetros ativos neste orçamento
+  const [params, setParams] = useState<PricingParameters>(() =>
+    initialOrcamento?.parametros
+      ? { ...initialOrcamento.parametros }
+      : loadSavedDefaultParams()
+  );
+
+  // Textos dos inputs de parâmetros (permite apagar totalmente o campo durante a edição)
+  const [paramInputs, setParamInputs] = useState<Record<ParamKey, string>>(() => {
+    const startParams = initialOrcamento?.parametros
+      ? initialOrcamento.parametros
+      : loadSavedDefaultParams();
+    return {
+      margemLucroPercent: String(startParams.margemLucroPercent),
+      impostoFaturamentoPercent: String(startParams.impostoFaturamentoPercent),
+      taxaAdministrativaPercent: String(startParams.taxaAdministrativaPercent),
+      comissaoVendedorPercent: String(startParams.comissaoVendedorPercent),
+      issPercent: String(startParams.issPercent),
+      antecipacaoPercent: String(startParams.antecipacaoPercent),
+    };
+  });
+
+  // Controle de modo de edição individual por parâmetro
+  const [editingParams, setEditingParams] = useState<Record<ParamKey, boolean>>({
+    margemLucroPercent: false,
+    impostoFaturamentoPercent: false,
+    taxaAdministrativaPercent: false,
+    comissaoVendedorPercent: false,
+    issPercent: false,
+    antecipacaoPercent: false,
+  });
+
+  // Guarda o valor anterior caso o usuário cancele a edição daquele parâmetro
+  const [previousParamValues, setPreviousParamValues] = useState<
+    Record<ParamKey, { num: number; text: string }>
+  >(() => {
+    const startParams = initialOrcamento?.parametros
+      ? initialOrcamento.parametros
+      : loadSavedDefaultParams();
+    return {
+      margemLucroPercent: {
+        num: startParams.margemLucroPercent,
+        text: String(startParams.margemLucroPercent),
+      },
+      impostoFaturamentoPercent: {
+        num: startParams.impostoFaturamentoPercent,
+        text: String(startParams.impostoFaturamentoPercent),
+      },
+      taxaAdministrativaPercent: {
+        num: startParams.taxaAdministrativaPercent,
+        text: String(startParams.taxaAdministrativaPercent),
+      },
+      comissaoVendedorPercent: {
+        num: startParams.comissaoVendedorPercent,
+        text: String(startParams.comissaoVendedorPercent),
+      },
+      issPercent: {
+        num: startParams.issPercent,
+        text: String(startParams.issPercent),
+      },
+      antecipacaoPercent: {
+        num: startParams.antecipacaoPercent,
+        text: String(startParams.antecipacaoPercent),
+      },
+    };
+  });
+
+  // Campos de parâmetros com erro de preenchimento obrigatório
+  const [missingParamFields, setMissingParamFields] = useState<
+    Record<ParamKey, boolean>
+  >({
+    margemLucroPercent: false,
+    impostoFaturamentoPercent: false,
+    taxaAdministrativaPercent: false,
+    comissaoVendedorPercent: false,
+    issPercent: false,
+    antecipacaoPercent: false,
+  });
+  const [paramSectionFeedback, setParamSectionFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  const paramInputRefs = useRef<Partial<Record<ParamKey, HTMLInputElement | null>>>({});
 
   // Itens do Orçamento
   const [itens, setItens] = useState<OrcamentoItem[]>(
@@ -167,15 +348,23 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       }
 
       const importedItems: OrcamentoItem[] = extracted.map(
-        (row: { codigoDescricao?: string; qte?: number }, idx: number) => {
-          const descPeca = String(row.codigoDescricao || '').trim() || `Peça #${idx + 1}`;
+        (
+          row: { codigoDescricao?: string; qte?: number; vlUn?: number },
+          idx: number
+        ) => {
+          const descPeca =
+            String(row.codigoDescricao || '').trim() || `Peça #${idx + 1}`;
           const qtdFromQte = Number(row.qte) || 1;
+          const custoFromVlUn =
+            typeof row.vlUn === 'number' && !isNaN(row.vlUn) && row.vlUn >= 0
+              ? row.vlUn
+              : Number(row.vlUn) || 0;
           return {
             id: `item-${Date.now()}-${idx}`,
             produto: descPeca,
             descricao: descPeca,
             quantidade: qtdFromQte,
-            custoUnitario: 0,
+            custoUnitario: custoFromVlUn,
           };
         }
       );
@@ -279,17 +468,235 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     setDeletingItem(null);
   };
 
-  const handleParamChange = (field: keyof PricingParameters, value: string) => {
-    const sanitized = value.replace(',', '.');
-    const num = parseFloat(sanitized);
+  const handleStartEditParam = (field: ParamKey) => {
+    setParamSectionFeedback(null);
+    setPreviousParamValues((prev) => ({
+      ...prev,
+      [field]: {
+        num: params[field],
+        text: paramInputs[field],
+      },
+    }));
+    setEditingParams((prev) => ({
+      ...prev,
+      [field]: true,
+    }));
+    setTimeout(() => {
+      const inputEl = paramInputRefs.current[field];
+      if (inputEl) {
+        inputEl.focus();
+        inputEl.select();
+      }
+    }, 0);
+  };
+
+  const handleParamChange = (field: ParamKey, value: string) => {
+    // Allow empty string and valid decimal typing (numbers, dot, comma) without forcing 0 into the input
+    const cleaned = value.replace(/[^0-9.,]/g, '');
+    setParamInputs((prev) => ({
+      ...prev,
+      [field]: cleaned,
+    }));
+
+    if (cleaned.trim() !== '') {
+      const sanitized = cleaned.replace(',', '.');
+      const num = parseFloat(sanitized);
+      if (!isNaN(num) && num >= 0) {
+        setParams((prev) => ({
+          ...prev,
+          [field]: num,
+        }));
+        setMissingParamFields((prev) => ({
+          ...prev,
+          [field]: false,
+        }));
+      }
+    } else {
+      // Temporarily use 0 for real-time calculation preview while input remains visually empty
+      setParams((prev) => ({
+        ...prev,
+        [field]: 0,
+      }));
+    }
+  };
+
+  const handleConfirmParam = (field: ParamKey) => {
+    const raw = paramInputs[field]?.trim() ?? '';
+    const num = parseFloat(raw.replace(',', '.'));
+
+    if (raw === '' || isNaN(num) || num < 0) {
+      setMissingParamFields((prev) => ({
+        ...prev,
+        [field]: true,
+      }));
+      setParamSectionFeedback({
+        type: 'error',
+        message: 'O preenchimento do parâmetro é obrigatório. Informe um valor válido antes de salvar.',
+      });
+      paramInputRefs.current[field]?.focus();
+      return;
+    }
+
+    const formattedText = String(num);
     setParams((prev) => ({
       ...prev,
-      [field]: isNaN(num) || num < 0 ? 0 : num,
+      [field]: num,
     }));
+    setParamInputs((prev) => ({
+      ...prev,
+      [field]: formattedText,
+    }));
+    setPreviousParamValues((prev) => ({
+      ...prev,
+      [field]: { num, text: formattedText },
+    }));
+    setMissingParamFields((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+    setEditingParams((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+    setParamSectionFeedback(null);
+  };
+
+  const handleCancelEditParam = (field: ParamKey) => {
+    const prevVal = previousParamValues[field];
+    setParams((prev) => ({
+      ...prev,
+      [field]: prevVal.num,
+    }));
+    setParamInputs((prev) => ({
+      ...prev,
+      [field]: prevVal.text,
+    }));
+    setMissingParamFields((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+    setEditingParams((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+    setParamSectionFeedback(null);
+  };
+
+  const handleSaveParamAsDefault = (field: ParamKey) => {
+    const raw = paramInputs[field]?.trim() ?? '';
+    const num = parseFloat(raw.replace(',', '.'));
+
+    if (raw === '' || isNaN(num) || num < 0) {
+      setMissingParamFields((prev) => ({
+        ...prev,
+        [field]: true,
+      }));
+      setParamSectionFeedback({
+        type: 'error',
+        message: 'O preenchimento do parâmetro é obrigatório para salvá-lo como padrão.',
+      });
+      paramInputRefs.current[field]?.focus();
+      return;
+    }
+
+    const formattedText = String(num);
+    const updatedDefaults: PricingParameters = {
+      ...defaultParams,
+      [field]: num,
+    };
+
+    try {
+      localStorage.setItem(
+        DEFAULT_PARAMS_STORAGE_KEY,
+        JSON.stringify(updatedDefaults)
+      );
+    } catch {
+      // Ignore storage errors
+    }
+
+    setDefaultParams(updatedDefaults);
+    setParams((prev) => ({
+      ...prev,
+      [field]: num,
+    }));
+    setParamInputs((prev) => ({
+      ...prev,
+      [field]: formattedText,
+    }));
+    setPreviousParamValues((prev) => ({
+      ...prev,
+      [field]: { num, text: formattedText },
+    }));
+    setMissingParamFields((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+    setEditingParams((prev) => ({
+      ...prev,
+      [field]: false,
+    }));
+
+    const fieldLabel =
+      PARAM_FIELDS.find((f) => f.key === field)?.label || 'Parâmetro';
+    setParamSectionFeedback({
+      type: 'success',
+      message: `${fieldLabel} salvo para este orçamento e atualizado como novo valor padrão (${num}%) para os próximos orçamentos.`,
+    });
   };
 
   const handleSaveOrcamento = () => {
     setSaveError('');
+
+    // Validate all mandatory fields in "2. Parâmetros do Orçamento"
+    const newMissingParams: Record<ParamKey, boolean> = {
+      margemLucroPercent: false,
+      impostoFaturamentoPercent: false,
+      taxaAdministrativaPercent: false,
+      comissaoVendedorPercent: false,
+      issPercent: false,
+      antecipacaoPercent: false,
+    };
+    const missingLabels: string[] = [];
+    const validatedParams: PricingParameters = { ...params };
+
+    for (const fieldMeta of PARAM_FIELDS) {
+      const raw = paramInputs[fieldMeta.key]?.trim() ?? '';
+      const num = parseFloat(raw.replace(',', '.'));
+      if (raw === '' || isNaN(num) || num < 0) {
+        newMissingParams[fieldMeta.key] = true;
+        missingLabels.push(fieldMeta.label);
+      } else {
+        validatedParams[fieldMeta.key] = num;
+      }
+    }
+
+    setMissingParamFields(newMissingParams);
+
+    if (missingLabels.length > 0) {
+      const msg = `Preenchimento obrigatório em "2. Parâmetros do Orçamento": preencha todos os campos obrigatórios (${missingLabels.join(', ')}) antes de salvar o orçamento.`;
+      setSaveError(msg);
+      setParamSectionFeedback({
+        type: 'error',
+        message: 'Todos os campos de Parâmetros do Orçamento são de preenchimento obrigatório. Preencha os campos destacados em vermelho.',
+      });
+      const firstMissingKey = PARAM_FIELDS.find((f) => newMissingParams[f.key])?.key;
+      if (firstMissingKey) {
+        paramInputRefs.current[firstMissingKey]?.focus();
+      }
+      return;
+    }
+
+    // Lock any open parameter edits with their valid numbers
+    setParams(validatedParams);
+    setEditingParams({
+      margemLucroPercent: false,
+      impostoFaturamentoPercent: false,
+      taxaAdministrativaPercent: false,
+      comissaoVendedorPercent: false,
+      issPercent: false,
+      antecipacaoPercent: false,
+    });
+    setParamSectionFeedback(null);
 
     if (!osNumber.trim()) {
       setSaveError('Informe o número da OS do orçamento.');
@@ -303,7 +710,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       setSaveError('Adicione pelo menos um item ao orçamento.');
       return;
     }
-    if (!calc.isDenominadorValido) {
+
+    const finalCalc = calculatePricing(itens, validatedParams);
+    if (!finalCalc.isDenominadorValido) {
       setSaveError(
         'O denominador de cálculo é inválido (<= 0). Por favor, revise os percentuais de impostos e taxas nos Parâmetros do Orçamento.'
       );
@@ -319,11 +728,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       createdByEmail: initialOrcamento?.createdByEmail || user?.email?.toLowerCase().trim(),
       createdByUserId: initialOrcamento?.createdByUserId || user?.id,
       status: initialOrcamento?.status || 'Pendente',
-      parametros: params,
+      parametros: validatedParams,
       itens,
-      totalValue: calc.valorFinalVenda,
-      custoTotal: calc.custoTotal,
-      base: calc.base,
+      totalValue: finalCalc.valorFinalVenda,
+      custoTotal: finalCalc.custoTotal,
+      base: finalCalc.base,
     };
 
     onSave(orcamentoToSave);
@@ -446,7 +855,7 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       {/* 2. Parâmetros do Orçamento */}
       <Card variant="glass">
         <CardHeader className="border-b border-slate-100 pb-3 bg-slate-50/50">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-slate-900">
               <Percent className="w-4 h-4 text-amber-600" />
               <CardTitle className="text-sm font-semibold uppercase tracking-wider text-slate-700">
@@ -454,189 +863,152 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
               </CardTitle>
             </div>
             <span className="text-xs text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-              Alíquotas e Margens Percentuais (%)
+              Alíquotas e Margens Percentuais (%) • Preenchimento Obrigatório
             </span>
           </div>
         </CardHeader>
-        <CardContent className="pt-5">
+        <CardContent className="pt-5 space-y-4">
+          {paramSectionFeedback && (
+            <Alert
+              type={paramSectionFeedback.type}
+              onClose={() => setParamSectionFeedback(null)}
+            >
+              {paramSectionFeedback.message}
+            </Alert>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {/* Margem de Lucro */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  Margem de Lucro (%)
-                </label>
-                <span className="text-[10px] text-amber-700 font-bold bg-amber-100/70 px-1.5 py-0.5 rounded">
-                  Sobre Custo
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.margemLucroPercent}
-                  onChange={(e) =>
-                    handleParamChange('margemLucroPercent', e.target.value)
-                  }
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Aplicada diretamente sobre o Custo Total dos itens.
-              </p>
-            </div>
+            {PARAM_FIELDS.map((fieldMeta) => {
+              const isEditing = editingParams[fieldMeta.key];
+              const isMissing = missingParamFields[fieldMeta.key];
+              const currentInputVal = paramInputs[fieldMeta.key];
+              const defaultVal = defaultParams[fieldMeta.key];
 
-            {/* Imposto sobre Faturamento */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  Imposto sobre Faturamento (%)
-                </label>
-                <span className="text-[10px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded font-medium">
-                  Sobre Venda
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.impostoFaturamentoPercent}
-                  onChange={(e) =>
-                    handleParamChange('impostoFaturamentoPercent', e.target.value)
-                  }
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Calculado sobre o Valor Final Faturado.
-              </p>
-            </div>
+              return (
+                <div
+                  key={fieldMeta.key}
+                  className={`p-3.5 rounded-xl border transition-all ${
+                    isMissing
+                      ? 'bg-red-50/60 border-red-400 ring-2 ring-red-200'
+                      : isEditing
+                      ? 'bg-amber-50/40 border-amber-400 ring-2 ring-amber-100'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <label className="text-xs font-bold text-slate-800">
+                      {fieldMeta.label} <span className="text-red-600">*</span>
+                    </label>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${fieldMeta.badgeClass}`}
+                    >
+                      {fieldMeta.badgeText}
+                    </span>
+                  </div>
 
-            {/* Taxa Administrativa */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  Taxa Administrativa (%)
-                </label>
-                <span className="text-[10px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded font-medium">
-                  Sobre Venda
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.taxaAdministrativaPercent}
-                  onChange={(e) =>
-                    handleParamChange('taxaAdministrativaPercent', e.target.value)
-                  }
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Deduzida da venda antes da comissão.
-              </p>
-            </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        ref={(el) => {
+                          paramInputRefs.current[fieldMeta.key] = el;
+                        }}
+                        type="text"
+                        inputMode="decimal"
+                        disabled={!isEditing}
+                        value={currentInputVal}
+                        onChange={(e) =>
+                          handleParamChange(fieldMeta.key, e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && isEditing) {
+                            e.preventDefault();
+                            handleConfirmParam(fieldMeta.key);
+                          } else if (e.key === 'Escape' && isEditing) {
+                            e.preventDefault();
+                            handleCancelEditParam(fieldMeta.key);
+                          }
+                        }}
+                        placeholder="Ex: 30"
+                        className={`w-full pr-8 pl-3 py-2 rounded-lg text-sm font-bold shadow-xs transition-colors ${
+                          isMissing
+                            ? 'bg-white border-2 border-red-500 text-red-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-500'
+                            : isEditing
+                            ? 'bg-white border-2 border-amber-500 text-slate-900 focus:border-amber-600 focus:outline-none focus:ring-1 focus:ring-amber-500'
+                            : 'bg-slate-100 border border-slate-300 text-slate-800 cursor-not-allowed'
+                        }`}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
+                        %
+                      </span>
+                    </div>
 
-            {/* Comissão do Vendedor */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  Comissão do Vendedor (%)
-                </label>
-                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">
-                  Sobre Líquido Empresa
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.comissaoVendedorPercent}
-                  onChange={(e) =>
-                    handleParamChange('comissaoVendedorPercent', e.target.value)
-                  }
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Calculada sobre o recebido após a Taxa Administrativa.
-              </p>
-            </div>
+                    {!isEditing && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleStartEditParam(fieldMeta.key)}
+                        leftIcon={<Edit3 className="w-3.5 h-3.5" />}
+                        className="shrink-0"
+                      >
+                        Editar
+                      </Button>
+                    )}
+                  </div>
 
-            {/* ISS sobre Faturamento */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  ISS sobre Faturamento (%)
-                </label>
-                <span className="text-[10px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded font-medium">
-                  Sobre Venda
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.issPercent}
-                  onChange={(e) => handleParamChange('issPercent', e.target.value)}
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Calculado sobre o Valor Final Faturado.
-              </p>
-            </div>
+                  {isEditing && (
+                    <div className="mt-2.5 pt-2.5 border-t border-amber-200/70 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleConfirmParam(fieldMeta.key)}
+                          leftIcon={<Check className="w-3.5 h-3.5" />}
+                        >
+                          Salvar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCancelEditParam(fieldMeta.key)}
+                          leftIcon={<X className="w-3.5 h-3.5" />}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
 
-            {/* Antecipação sobre Faturamento */}
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-800">
-                  Antecipação sobre Faturamento (%)
-                </label>
-                <span className="text-[10px] text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded font-medium">
-                  Sobre Venda
-                </span>
-              </div>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={params.antecipacaoPercent}
-                  onChange={(e) =>
-                    handleParamChange('antecipacaoPercent', e.target.value)
-                  }
-                  className="w-full pr-8 pl-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 font-bold focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-xs"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none font-bold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1.5">
-                Calculada sobre o Valor Final Faturado.
-              </p>
-            </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveParamAsDefault(fieldMeta.key)}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-950 bg-amber-100/80 hover:bg-amber-200/80 px-2 py-1 rounded-md transition-colors"
+                        title="Salvar este valor também como padrão para os próximos orçamentos"
+                      >
+                        <BookmarkCheck className="w-3.5 h-3.5" />
+                        Salvar como padrão
+                      </button>
+                    </div>
+                  )}
+
+                  {isMissing && (
+                    <p className="text-[11px] font-semibold text-red-600 mt-1.5 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      Preenchimento obrigatório.
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <p className="text-[11px] text-slate-500">
+                      {fieldMeta.description}
+                    </p>
+                    <span className="text-[10px] font-mono text-slate-500 shrink-0 bg-slate-200/70 px-1.5 py-0.5 rounded">
+                      Padrão: {defaultVal}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

@@ -16,7 +16,7 @@ import { Alert } from '../ui/Alert';
 import type { Orcamento } from '../../types/orcamento';
 import { OrcamentoFormView } from './OrcamentoFormView';
 import { formatCurrencyBRL } from '../../utils/pricingEngine';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseClient } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 
 const STORAGE_KEY = 'rn_precificacao_orcamentos_prod_v1';
@@ -47,12 +47,23 @@ export const OrcamentosView: React.FC = () => {
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const client = supabase;
-    if (!isSupabaseConfigured() || !client) return;
-
     const loadOrcamentos = async () => {
       try {
+        const client = await getSupabaseClient();
+        if (!client) return;
+
         await client.from('orcamentos').delete().in('id', ['orc-1', 'orc-2', 'orc-3']);
+
+        // First, sync any locally stored quotes that may have been created before Supabase was connected
+        let localQuotes: Orcamento[] = [];
+        try {
+          const rawLocal = localStorage.getItem(STORAGE_KEY);
+          if (rawLocal) {
+            localQuotes = JSON.parse(rawLocal);
+          }
+        } catch {
+          localQuotes = [];
+        }
 
         const { data, error } = await client
           .from('orcamentos')
@@ -60,7 +71,35 @@ export const OrcamentosView: React.FC = () => {
           .order('created_at', { ascending: false });
 
         if (!error && data) {
-          const mapped: Orcamento[] = data.map((row: any) => ({
+          const remoteIds = new Set(data.map((row: any) => row.id));
+          const unsyncedLocal = localQuotes.filter(
+            (q) => q.id && !remoteIds.has(q.id) && !['orc-1', 'orc-2', 'orc-3'].includes(q.id)
+          );
+
+          if (unsyncedLocal.length > 0) {
+            for (const savedOrc of unsyncedLocal) {
+              await client.from('orcamentos').upsert({
+                id: savedOrc.id,
+                os_number: savedOrc.osNumber,
+                client_name: savedOrc.clientName,
+                date: savedOrc.date,
+                responsavel: savedOrc.responsavel,
+                status: savedOrc.status,
+                parametros: {
+                  ...savedOrc.parametros,
+                  _createdByEmail: savedOrc.createdByEmail,
+                  _createdByUserId: savedOrc.createdByUserId,
+                },
+                itens: savedOrc.itens,
+                total_value: savedOrc.totalValue,
+                custo_total: savedOrc.custoTotal || 0,
+                base: savedOrc.base || 0,
+                updated_at: new Date().toISOString(),
+              });
+            }
+          }
+
+          const mappedRemote: Orcamento[] = data.map((row: any) => ({
             id: row.id,
             osNumber: row.os_number,
             clientName: row.client_name,
@@ -75,7 +114,8 @@ export const OrcamentosView: React.FC = () => {
             custoTotal: Number(row.custo_total) || 0,
             base: Number(row.base) || 0,
           }));
-          setOrcamentos(mapped);
+
+          setOrcamentos([...unsyncedLocal, ...mappedRemote]);
         }
       } catch (err) {
         console.error('Erro ao carregar orçamentos do Supabase:', err);
@@ -99,7 +139,7 @@ export const OrcamentosView: React.FC = () => {
     setViewMode('form');
   };
 
-  const handleSaveOrcamento = (savedOrc: Orcamento) => {
+  const handleSaveOrcamento = async (savedOrc: Orcamento) => {
     setOrcamentos((prev) => {
       const exists = prev.some((it) => it.id === savedOrc.id);
       if (exists) {
@@ -108,30 +148,27 @@ export const OrcamentosView: React.FC = () => {
       return [savedOrc, ...prev];
     });
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('orcamentos')
-        .upsert({
-          id: savedOrc.id,
-          os_number: savedOrc.osNumber,
-          client_name: savedOrc.clientName,
-          date: savedOrc.date,
-          responsavel: savedOrc.responsavel,
-          status: savedOrc.status,
-          parametros: {
-            ...savedOrc.parametros,
-            _createdByEmail: savedOrc.createdByEmail,
-            _createdByUserId: savedOrc.createdByUserId,
-          },
-          itens: savedOrc.itens,
-          total_value: savedOrc.totalValue,
-          custo_total: savedOrc.custoTotal || 0,
-          base: savedOrc.base || 0,
-          updated_at: new Date().toISOString(),
-        })
-        .then(({ error }) => {
-          if (error) console.error('Erro ao salvar orçamento no Supabase:', error.message);
-        });
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
+      const { error } = await client.from('orcamentos').upsert({
+        id: savedOrc.id,
+        os_number: savedOrc.osNumber,
+        client_name: savedOrc.clientName,
+        date: savedOrc.date,
+        responsavel: savedOrc.responsavel,
+        status: savedOrc.status,
+        parametros: {
+          ...savedOrc.parametros,
+          _createdByEmail: savedOrc.createdByEmail,
+          _createdByUserId: savedOrc.createdByUserId,
+        },
+        itens: savedOrc.itens,
+        total_value: savedOrc.totalValue,
+        custo_total: savedOrc.custoTotal || 0,
+        base: savedOrc.base || 0,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) console.error('Erro ao salvar orçamento no Supabase:', error.message);
     }
 
     setViewMode('list');
@@ -142,20 +179,16 @@ export const OrcamentosView: React.FC = () => {
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deletingOrcamento) return;
     const idToDelete = deletingOrcamento.id;
     setOrcamentos((prev) => prev.filter((item) => item.id !== idToDelete));
     setDeletingOrcamento(null);
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('orcamentos')
-        .delete()
-        .eq('id', idToDelete)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao excluir orçamento no Supabase:', error.message);
-        });
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
+      const { error } = await client.from('orcamentos').delete().eq('id', idToDelete);
+      if (error) console.error('Erro ao excluir orçamento no Supabase:', error.message);
     }
 
     setFeedbackMessage('Orçamento excluído com sucesso.');

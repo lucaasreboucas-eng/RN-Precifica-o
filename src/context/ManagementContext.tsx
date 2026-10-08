@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ProfileRole, ManagedUser, SidebarMainTab } from '../types/settings';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, getSupabaseClient } from '../lib/supabase';
 
 // Central structure of the sidebar navigation with Abas and Sub-abas.
 export const SIDEBAR_STRUCTURE: SidebarMainTab[] = [
@@ -112,11 +112,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Load from Supabase if configured
   useEffect(() => {
-    const client = supabase;
-    if (!isSupabaseConfigured() || !client) return;
-
     const loadSupabaseData = async () => {
       try {
+        const client = await getSupabaseClient();
+        if (!client) return;
+
         // Remove legacy test users and test profile if they exist in Supabase
         await client.from('managed_users').delete().in('id', ['user-1', 'user-2']);
         await client.from('profiles').delete().eq('id', 'perfil-orcamentista');
@@ -149,12 +149,37 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           { onConflict: 'id' }
         );
 
+        // Sync any locally saved profiles that are not yet in Supabase
+        let localProfiles: ProfileRole[] = [];
+        try {
+          const rawProfiles = localStorage.getItem(PROFILES_STORAGE_KEY);
+          if (rawProfiles) localProfiles = JSON.parse(rawProfiles);
+        } catch {
+          localProfiles = [];
+        }
+
         const { data: profilesData, error: profilesError } = await client
           .from('profiles')
           .select('*')
           .order('created_at', { ascending: true });
 
-        if (!profilesError && profilesData && profilesData.length > 0) {
+        if (!profilesError && profilesData) {
+          const remoteProfileIds = new Set(profilesData.map((r: any) => r.id));
+          const unsyncedProfiles = localProfiles.filter(
+            (p) => p.id && !remoteProfileIds.has(p.id) && p.id !== 'perfil-orcamentista'
+          );
+
+          for (const p of unsyncedProfiles) {
+            await client.from('profiles').upsert({
+              id: p.id,
+              name: p.name,
+              description: p.description || '',
+              permissions: p.permissions || [],
+              is_system: Boolean(p.isSystem),
+              created_at: p.createdAt || new Date().toISOString(),
+            });
+          }
+
           const mappedProfiles: ProfileRole[] = profilesData.map((row: any) => ({
             id: row.id,
             name: row.name,
@@ -163,7 +188,16 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             isSystem: Boolean(row.is_system),
             createdAt: row.created_at || new Date().toISOString(),
           }));
-          setProfiles(mappedProfiles);
+          setProfiles([...mappedProfiles, ...unsyncedProfiles]);
+        }
+
+        // Sync any locally saved users that are not yet in Supabase
+        let localUsers: ManagedUser[] = [];
+        try {
+          const rawUsers = localStorage.getItem(USERS_STORAGE_KEY);
+          if (rawUsers) localUsers = JSON.parse(rawUsers);
+        } catch {
+          localUsers = [];
         }
 
         const { data: usersData, error: usersError } = await client
@@ -171,7 +205,29 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           .select('*')
           .order('created_at', { ascending: true });
 
-        if (!usersError && usersData && usersData.length > 0) {
+        if (!usersError && usersData) {
+          const remoteUserIds = new Set(usersData.map((r: any) => r.id));
+          const remoteEmails = new Set(usersData.map((r: any) => String(r.email).toLowerCase()));
+          const unsyncedUsers = localUsers.filter(
+            (u) =>
+              u.id &&
+              !remoteUserIds.has(u.id) &&
+              !remoteEmails.has(u.email.toLowerCase()) &&
+              !['user-1', 'user-2'].includes(u.id)
+          );
+
+          for (const u of unsyncedUsers) {
+            await client.from('managed_users').upsert({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              password: u.password || null,
+              profile_id: u.profileId,
+              status: u.status,
+              created_at: u.createdAt || new Date().toISOString(),
+            });
+          }
+
           const mappedUsers: ManagedUser[] = usersData.map((row: any) => ({
             id: row.id,
             name: row.name,
@@ -181,7 +237,7 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             status: row.status === 'bloqueado' ? 'bloqueado' : 'ativo',
             createdAt: row.created_at || new Date().toISOString(),
           }));
-          setUsers(mappedUsers);
+          setUsers([...mappedUsers, ...unsyncedUsers]);
         }
       } catch (err) {
         console.error('Erro ao sincronizar perfis e usuários do Supabase:', err);
@@ -199,7 +255,7 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
   }, [users]);
 
-  const addProfile = (name: string, description?: string) => {
+  const addProfile = async (name: string, description?: string) => {
     const newProfile: ProfileRole = {
       id: `perfil-${Date.now()}`,
       name: name.trim(),
@@ -209,41 +265,34 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
     setProfiles((prev) => [...prev, newProfile]);
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('profiles')
-        .insert({
-          id: newProfile.id,
-          name: newProfile.name,
-          description: newProfile.description,
-          permissions: newProfile.permissions,
-          is_system: false,
-          created_at: newProfile.createdAt,
-        })
-        .then(({ error }) => {
-          if (error) console.error('Erro ao salvar perfil no Supabase:', error.message);
-        });
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
+      const { error } = await client.from('profiles').insert({
+        id: newProfile.id,
+        name: newProfile.name,
+        description: newProfile.description,
+        permissions: newProfile.permissions,
+        is_system: false,
+        created_at: newProfile.createdAt,
+      });
+      if (error) console.error('Erro ao salvar perfil no Supabase:', error.message);
     }
   };
 
-  const updateProfile = (id: string, data: Partial<ProfileRole>) => {
+  const updateProfile = async (id: string, data: Partial<ProfileRole>) => {
     setProfiles((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...data } : item))
     );
 
-    if (isSupabaseConfigured() && supabase) {
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
       const updatePayload: Record<string, any> = {};
       if (data.name !== undefined) updatePayload.name = data.name;
       if (data.description !== undefined) updatePayload.description = data.description;
       if (data.permissions !== undefined) updatePayload.permissions = data.permissions;
 
-      supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao atualizar perfil no Supabase:', error.message);
-        });
+      const { error } = await client.from('profiles').update(updatePayload).eq('id', id);
+      if (error) console.error('Erro ao atualizar perfil no Supabase:', error.message);
     }
   };
 
@@ -264,15 +313,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     setProfiles((prev) => prev.filter((p) => p.id !== id));
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('profiles')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao excluir perfil no Supabase:', error.message);
-        });
-    }
+    getSupabaseClient().then((client) => {
+      if (client) {
+        client
+          .from('profiles')
+          .delete()
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.error('Erro ao excluir perfil no Supabase:', error.message);
+          });
+      }
+    });
 
     return { success: true };
   };
@@ -286,15 +337,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ? profile.permissions.filter((id) => id !== subTabId)
           : [...profile.permissions, subTabId];
 
-        if (isSupabaseConfigured() && supabase) {
-          supabase
-            .from('profiles')
-            .update({ permissions: newPermissions })
-            .eq('id', profileId)
-            .then(({ error }) => {
-              if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
-            });
-        }
+        getSupabaseClient().then((client) => {
+          if (client) {
+            client
+              .from('profiles')
+              .update({ permissions: newPermissions })
+              .eq('id', profileId)
+              .then(({ error }) => {
+                if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
+              });
+          }
+        });
 
         return {
           ...profile,
@@ -317,15 +370,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             ? profile.permissions.filter((id) => id !== mainTabId)
             : [...profile.permissions, mainTabId];
 
-          if (isSupabaseConfigured() && supabase) {
-            supabase
-              .from('profiles')
-              .update({ permissions: newPermissions })
-              .eq('id', profileId)
-              .then(({ error }) => {
-                if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
-              });
-          }
+          getSupabaseClient().then((client) => {
+            if (client) {
+              client
+                .from('profiles')
+                .update({ permissions: newPermissions })
+                .eq('id', profileId)
+                .then(({ error }) => {
+                  if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
+                });
+            }
+          });
 
           return {
             ...profile,
@@ -346,15 +401,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ? profile.permissions.filter((id) => !subTabIds.includes(id))
           : Array.from(new Set([...profile.permissions, ...subTabIds]));
 
-        if (isSupabaseConfigured() && supabase) {
-          supabase
-            .from('profiles')
-            .update({ permissions: newPermissions })
-            .eq('id', profileId)
-            .then(({ error }) => {
-              if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
-            });
-        }
+        getSupabaseClient().then((client) => {
+          if (client) {
+            client
+              .from('profiles')
+              .update({ permissions: newPermissions })
+              .eq('id', profileId)
+              .then(({ error }) => {
+                if (error) console.error('Erro ao atualizar permissões no Supabase:', error.message);
+              });
+          }
+        });
 
         return {
           ...profile,
@@ -364,7 +421,7 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
-  const addUser = (userData: Omit<ManagedUser, 'id' | 'createdAt'>) => {
+  const addUser = async (userData: Omit<ManagedUser, 'id' | 'createdAt'>) => {
     const newUser: ManagedUser = {
       ...userData,
       id: `user-${Date.now()}`,
@@ -372,30 +429,28 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
     setUsers((prev) => [...prev, newUser]);
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('managed_users')
-        .insert({
-          id: newUser.id,
-          name: newUser.name,
-          email: newUser.email,
-          password: newUser.password || null,
-          profile_id: newUser.profileId,
-          status: newUser.status,
-          created_at: newUser.createdAt,
-        })
-        .then(({ error }) => {
-          if (error) console.error('Erro ao salvar usuário no Supabase:', error.message);
-        });
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
+      const { error } = await client.from('managed_users').insert({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        password: newUser.password || null,
+        profile_id: newUser.profileId,
+        status: newUser.status,
+        created_at: newUser.createdAt,
+      });
+      if (error) console.error('Erro ao salvar usuário no Supabase:', error.message);
     }
   };
 
-  const updateUser = (id: string, userData: Partial<ManagedUser>) => {
+  const updateUser = async (id: string, userData: Partial<ManagedUser>) => {
     setUsers((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...userData } : item))
     );
 
-    if (isSupabaseConfigured() && supabase) {
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
       const updatePayload: Record<string, any> = {};
       if (userData.name !== undefined) updatePayload.name = userData.name;
       if (userData.email !== undefined) updatePayload.email = userData.email;
@@ -403,27 +458,18 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (userData.profileId !== undefined) updatePayload.profile_id = userData.profileId;
       if (userData.status !== undefined) updatePayload.status = userData.status;
 
-      supabase
-        .from('managed_users')
-        .update(updatePayload)
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao atualizar usuário no Supabase:', error.message);
-        });
+      const { error } = await client.from('managed_users').update(updatePayload).eq('id', id);
+      if (error) console.error('Erro ao atualizar usuário no Supabase:', error.message);
     }
   };
 
-  const deleteUser = (id: string) => {
+  const deleteUser = async (id: string) => {
     setUsers((prev) => prev.filter((u) => u.id !== id));
 
-    if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('managed_users')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Erro ao excluir usuário no Supabase:', error.message);
-        });
+    const client = supabase || (await getSupabaseClient());
+    if (client) {
+      const { error } = await client.from('managed_users').delete().eq('id', id);
+      if (error) console.error('Erro ao excluir usuário no Supabase:', error.message);
     }
   };
 
@@ -433,15 +479,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (item.id !== id) return item;
         const nextStatus = item.status === 'ativo' ? 'bloqueado' : 'ativo';
 
-        if (isSupabaseConfigured() && supabase) {
-          supabase
-            .from('managed_users')
-            .update({ status: nextStatus })
-            .eq('id', id)
-            .then(({ error }) => {
-              if (error) console.error('Erro ao atualizar status no Supabase:', error.message);
-            });
-        }
+        getSupabaseClient().then((client) => {
+          if (client) {
+            client
+              .from('managed_users')
+              .update({ status: nextStatus })
+              .eq('id', id)
+              .then(({ error }) => {
+                if (error) console.error('Erro ao atualizar status no Supabase:', error.message);
+              });
+          }
+        });
 
         return { ...item, status: nextStatus };
       })

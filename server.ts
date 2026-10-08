@@ -39,85 +39,112 @@ function parseBrazilianNumber(raw: string | number): number {
   return parseFloat(cleaned) || 0;
 }
 
-function fallbackParseText(text: string): Array<{ codigoDescricao: string; qte: number }> {
-  const results: Array<{ codigoDescricao: string; qte: number }> = [];
+function fallbackParseText(
+  text: string
+): Array<{ codigoDescricao: string; qte: number; vlUn: number }> {
+  const results: Array<{ codigoDescricao: string; qte: number; vlUn: number }> = [];
   const rawLines = text
     .split(/\r?\n/)
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
+  const vlUnBeforeQte = /vl\.?\s*un[\s\S]{0,120}?qte/i.test(text);
+
   const ignoreRegex =
-    /^(?:c[oó]digo|item\s+c[oó]digo|subtotal|total\s+geral|valor\s+total|desconto|frete|cnpj|cpf|insc\.?\s*est|endere[cç]o|telefone|cliente|vendedor|condi[cç][aã]o|observa[cç][aã]o|p[aá]gina|data\s+de\s+emiss[aã]o|validade|or[cç]amento\s+n|cota[cç][aã]o\s+n)/i;
+    /^(?:c[oó]digo|item\s+c[oó]digo|vl\.?\s*un|subtotal|total\s+geral|valor\s+total|desconto|frete|cnpj|cpf|insc\.?\s*est|inscri[cç][aã]o|endere[cç]o|rua\s+|telefone|e-?mail|dados\s+do|ordem\s+de\s+servi[cç]o|or[cç]amentista|tipo\s+de\s+cliente|fornecedor|contatos|cota[cç][aã]o\s+de\s+pre[cç]os|n[aã]o\s+se\s+aplica|cliente|vendedor|condi[cç][aã]o|observa[cç][aã]o|p[aá]gina|emiss[aã]o|hora|data\s+de\s+emiss[aã]o|validade|or[cç]amento\s+n|cota[cç][aã]o\s+n)/i;
+
+  let pendingDescLine = '';
 
   for (const line of rawLines) {
     if (ignoreRegex.test(line)) continue;
     if (/c[oó]digo.*descri[cç][aã]o/i.test(line)) continue;
+    if (/vl\.?\s*un.*%?\s*desc/i.test(line)) continue;
 
-    // Look for decimal numbers formatted with comma (e.g. 2,00  145,50  291,00)
+    // Remove percentage values like 0,00% so they are not confused with currency/quantity numbers
+    const lineWithoutPercent = line.replace(/\b\d{1,3}(?:\.\d{3})*,\d{1,4}\s*%/g, ' ');
+    const hasPercentInLine = /\b\d{1,3}(?:\.\d{3})*,\d{1,4}\s*%/.test(line);
+
     const currencyMatches = [
-      ...line.matchAll(/\b\d{1,3}(?:\.\d{3})*,\d{2,4}\b/g),
+      ...lineWithoutPercent.matchAll(/\b\d{1,3}(?:\.\d{3})*,\d{2,4}\b/g),
     ];
 
-    if (currencyMatches.length === 0) continue;
+    // Check if this line is a description line without decimal values (e.g. "1543 TUBO FLEXIVEL COBREADO KPU 3POLEGA")
+    if (currencyMatches.length === 0) {
+      if (/^\d+\s+[A-Za-zÀ-ÿ]/.test(line) || /[A-Za-zÀ-ÿ]{3,}/.test(line)) {
+        pendingDescLine = line;
+      }
+      continue;
+    }
 
     let qte = 1;
-    let cutIndex = currencyMatches[0].index ?? line.length;
+    let vlUn = 0;
+    const firstMatchIndex = currencyMatches[0].index ?? lineWithoutPercent.length;
+    const prefixText = lineWithoutPercent.slice(0, firstMatchIndex).trim();
 
     if (currencyMatches.length >= 3) {
-      // Format: [Código Descrição] [Qte: 2,00] [Vl. Un: 145,50] [Vl. Total: 291,00]
-      const n1 = parseBrazilianNumber(currencyMatches[currencyMatches.length - 3][0]);
-      const n2 = parseBrazilianNumber(currencyMatches[currencyMatches.length - 2][0]);
-      const n3 = parseBrazilianNumber(currencyMatches[currencyMatches.length - 1][0]);
-      if (n1 > 0 && n2 > 0 && Math.abs(n1 * n2 - n3) <= Math.max(0.1, n3 * 0.02)) {
-        qte = n1;
-        cutIndex = currencyMatches[currencyMatches.length - 3].index ?? cutIndex;
+      const n1 = parseBrazilianNumber(currencyMatches[0][0]);
+      const n2 = parseBrazilianNumber(currencyMatches[1][0]);
+      const n3 = parseBrazilianNumber(currencyMatches[2][0]);
+
+      if (n1 > 0 && n2 > 0 && Math.abs(n1 * n2 - n3) <= Math.max(0.15, n3 * 0.02)) {
+        if (vlUnBeforeQte || hasPercentInLine) {
+          vlUn = n1;
+          qte = n2;
+        } else {
+          qte = n1;
+          vlUn = n2;
+        }
       } else {
-        // Check if there is an integer Qte. right before the currency numbers
-        const prefix = line.slice(0, currencyMatches[currencyMatches.length - 2].index).trim();
-        const intQtyMatch = prefix.match(/\b(\d+)\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?$/i);
-        if (intQtyMatch) {
-          qte = parseInt(intQtyMatch[1], 10) || 1;
-          cutIndex =
-            (currencyMatches[currencyMatches.length - 2].index ?? 0) - intQtyMatch[0].length;
+        if (vlUnBeforeQte || hasPercentInLine) {
+          vlUn = n1;
+          qte = n2 > 0 ? n2 : 1;
         } else {
           qte = n1 > 0 ? n1 : 1;
-          cutIndex = currencyMatches[currencyMatches.length - 3].index ?? cutIndex;
+          vlUn = n2;
         }
       }
     } else if (currencyMatches.length === 2) {
       const n1 = parseBrazilianNumber(currencyMatches[0][0]);
       const n2 = parseBrazilianNumber(currencyMatches[1][0]);
-      const prefix = line.slice(0, currencyMatches[0].index).trim();
-      const intQtyMatch = prefix.match(/\b(\d+)\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?$/i);
+      const intQtyMatch = prefixText.match(/\b(\d+)\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?$/i);
       if (intQtyMatch) {
         qte = parseInt(intQtyMatch[1], 10) || 1;
-        cutIndex = (currencyMatches[0].index ?? 0) - intQtyMatch[0].length;
+        vlUn = n1;
+      } else if (vlUnBeforeQte || hasPercentInLine) {
+        vlUn = n1;
+        qte = n2 > 0 ? n2 : 1;
       } else {
         qte = n1 > 0 ? n1 : 1;
-        cutIndex = currencyMatches[0].index ?? cutIndex;
+        vlUn = n2;
       }
     } else if (currencyMatches.length === 1) {
-      const prefix = line.slice(0, currencyMatches[0].index).trim();
-      const intQtyMatch = prefix.match(/\b(\d+)\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?$/i);
+      const n1 = parseBrazilianNumber(currencyMatches[0][0]);
+      const intQtyMatch = prefixText.match(/\b(\d+)\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?$/i);
       if (intQtyMatch) {
         qte = parseInt(intQtyMatch[1], 10) || 1;
-        cutIndex = (currencyMatches[0].index ?? 0) - intQtyMatch[0].length;
+        vlUn = n1;
       } else {
-        qte = parseBrazilianNumber(currencyMatches[0][0]) || 1;
-        cutIndex = currencyMatches[0].index ?? cutIndex;
+        qte = n1 || 1;
       }
     }
 
-    const descPart = line
-      .slice(0, cutIndex)
+    let descPart = prefixText
       .replace(/\s+\d+\s*(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)?\s*$/i, '')
       .replace(/\s+(?:UN|PC|JG|KT|MT|LT|KG|PR|CJ)\s*$/i, '')
       .trim();
+
+    if ((!descPart || !/[A-Za-zÀ-ÿ]{2,}/.test(descPart)) && pendingDescLine) {
+      descPart = pendingDescLine;
+      pendingDescLine = '';
+    } else {
+      pendingDescLine = '';
+    }
 
     if (descPart && /[A-Za-zÀ-ÿ]{2,}/.test(descPart) && qte > 0) {
       results.push({
         codigoDescricao: descPart,
         qte,
+        vlUn,
       });
     }
   }
@@ -153,8 +180,12 @@ async function generateWithFallback(parts: any[]) {
                         type: Type.NUMBER,
                         description: 'Valor numérico do campo Qte. (quantidade) do relatório.',
                       },
+                      vlUn: {
+                        type: Type.NUMBER,
+                        description: 'Valor numérico do campo Vl. Un. (valor unitário) do relatório.',
+                      },
                     },
-                    required: ['codigoDescricao', 'qte'],
+                    required: ['codigoDescricao', 'qte', 'vlUn'],
                   },
                 },
               },
@@ -226,7 +257,8 @@ async function startServer() {
 Analise o documento de cotação e extraia todos os itens/peças listados na tabela.
 Para cada item da cotação, extraia exatamente:
 1. "codigoDescricao": O conteúdo do campo "Código Descrição da Peça" (se o Código e a Descrição da Peça estiverem em colunas separadas ou juntas, una-os no formato "CÓDIGO - DESCRIÇÃO DA PEÇA", ou apenas a descrição da peça se não houver código).
-2. "qte": O valor numérico do campo "Qte." (ou "Qte", "Qtde.", "Qtde", "Qtd.") do relatório para preencher a quantidade. Converta valores no formato brasileiro (ex: 2,00 -> 2).
+2. "qte": O valor numérico do campo "Qte." (ou "Qte", "Qtde.", "Qtde", "Qtd.") do relatório para preencher a quantidade. Converta valores no formato brasileiro (ex: 3,00 -> 3).
+3. "vlUn": O valor numérico da coluna "Vl. Un." (valor unitário) do relatório para preencher o custo unitário. Converta valores no formato brasileiro (ex: 171,43 -> 171.43).
 
 Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalho, rodapé, subtotais ou totais gerais).`;
 
@@ -283,6 +315,24 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
           'Não foi possível ler os itens do documento de cotação no momento. Tente novamente.',
       });
     }
+  });
+
+  app.get('/api/config', (_req, res) => {
+    const supabaseUrl =
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      '';
+    const supabaseAnonKey =
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      '';
+
+    res.status(200).json({
+      supabaseUrl,
+      supabaseAnonKey,
+    });
   });
 
   if (process.env.NODE_ENV !== 'production') {
