@@ -140,7 +140,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: true };
         }
 
-        // 2. Check Supabase managed_users table if configured
+        // 2. Check Backend Server Store (/api/store/login) for cross-device users
+        try {
+          const loginRes = await fetch('/api/store/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, password }),
+          });
+          if (loginRes.ok) {
+            const loginData = await loginRes.json();
+            if (loginData?.success && loginData?.user) {
+              localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(loginData.user));
+              setUser(loginData.user);
+              setSessionToken('server-store-session');
+              setIsLoading(false);
+              return { success: true };
+            }
+          } else if (loginRes.status === 403) {
+            const errData = await loginRes.json().catch(() => ({}));
+            setIsLoading(false);
+            return {
+              success: false,
+              error: errData?.error || 'Este usuário está bloqueado. Contate o administrador.',
+            };
+          }
+        } catch {
+          // continue to Supabase or local fallback if server request fails
+        }
+
+        // 3. Check Supabase managed_users table if configured
         const client = supabase || (await getSupabaseClient());
         if (client) {
           const { data: managedUser } = await client

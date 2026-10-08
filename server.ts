@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -8,6 +9,108 @@ import { extractText } from 'unpdf';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const DATA_FILE_PATH = path.join(__dirname, 'data', 'app-store.json');
+
+interface ServerStoreData {
+  profiles: any[];
+  users: any[];
+  orcamentos: any[];
+  defaultParams: {
+    margemLucroPercent: number;
+    impostoFaturamentoPercent: number;
+    taxaAdministrativaPercent: number;
+    comissaoVendedorPercent: number;
+    issPercent: number;
+    antecipacaoPercent: number;
+  };
+}
+
+const DEFAULT_STORE_DATA: ServerStoreData = {
+  profiles: [
+    {
+      id: 'perfil-admin',
+      name: 'Administrador Geral',
+      description: 'Acesso total a todas as abas e sub-abas.',
+      permissions: [
+        'gestao-precos-orcamentos',
+        'configuracoes-perfis',
+        'configuracoes-usuarios',
+      ],
+      isSystem: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  ],
+  users: [
+    {
+      id: 'user-adm',
+      name: 'Administrador Geral',
+      email: 'adm@rnprecificacao.com.br',
+      password: 'adm12345',
+      profileId: 'perfil-admin',
+      status: 'ativo',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  ],
+  orcamentos: [],
+  defaultParams: {
+    margemLucroPercent: 30,
+    impostoFaturamentoPercent: 6,
+    taxaAdministrativaPercent: 5,
+    comissaoVendedorPercent: 3,
+    issPercent: 2,
+    antecipacaoPercent: 1.5,
+  },
+};
+
+function readStore(): ServerStoreData {
+  try {
+    if (fs.existsSync(DATA_FILE_PATH)) {
+      const raw = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      const profiles = Array.isArray(parsed.profiles) && parsed.profiles.length > 0
+        ? parsed.profiles
+        : DEFAULT_STORE_DATA.profiles;
+      const users = Array.isArray(parsed.users) && parsed.users.length > 0
+        ? parsed.users
+        : DEFAULT_STORE_DATA.users;
+      const hasAdminUser = users.some(
+        (u: any) => String(u.email || '').toLowerCase() === 'adm@rnprecificacao.com.br'
+      );
+      if (!hasAdminUser) {
+        users.unshift(DEFAULT_STORE_DATA.users[0]);
+      }
+      const hasAdminProfile = profiles.some((p: any) => p.id === 'perfil-admin');
+      if (!hasAdminProfile) {
+        profiles.unshift(DEFAULT_STORE_DATA.profiles[0]);
+      }
+      return {
+        profiles,
+        users,
+        orcamentos: Array.isArray(parsed.orcamentos) ? parsed.orcamentos : [],
+        defaultParams:
+          parsed.defaultParams && typeof parsed.defaultParams === 'object'
+            ? { ...DEFAULT_STORE_DATA.defaultParams, ...parsed.defaultParams }
+            : { ...DEFAULT_STORE_DATA.defaultParams },
+      };
+    }
+  } catch (err) {
+    console.error('Erro ao ler banco de dados local:', err);
+  }
+  return JSON.parse(JSON.stringify(DEFAULT_STORE_DATA));
+}
+
+function writeStore(data: ServerStoreData): void {
+  try {
+    const dir = path.dirname(DATA_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Erro ao salvar banco de dados local:', err);
+  }
+}
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -332,6 +435,185 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     res.status(200).json({
       supabaseUrl,
       supabaseAnonKey,
+    });
+  });
+
+  // --- Persistent Server Store Endpoints (Cross-Device Sync) ---
+  app.get('/api/store', (_req, res) => {
+    const store = readStore();
+    res.json(store);
+  });
+
+  app.post('/api/store/sync', (req, res) => {
+    const store = readStore();
+    const { profiles, users, orcamentos, defaultParams } = req.body || {};
+
+    if (Array.isArray(profiles)) {
+      const existingIds = new Set(store.profiles.map((p: any) => p.id));
+      for (const p of profiles) {
+        if (p && p.id && p.id !== 'perfil-orcamentista') {
+          if (!existingIds.has(p.id)) {
+            store.profiles.push(p);
+            existingIds.add(p.id);
+          } else {
+            store.profiles = store.profiles.map((item: any) =>
+              item.id === p.id ? { ...item, ...p } : item
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(users)) {
+      const existingIds = new Set(store.users.map((u: any) => u.id));
+      const existingEmails = new Set(
+        store.users.map((u: any) => String(u.email || '').toLowerCase())
+      );
+      for (const u of users) {
+        if (u && u.id && !['user-1', 'user-2'].includes(u.id)) {
+          const emailLower = String(u.email || '').toLowerCase();
+          if (!existingIds.has(u.id) && !existingEmails.has(emailLower)) {
+            store.users.push(u);
+            existingIds.add(u.id);
+            existingEmails.add(emailLower);
+          } else {
+            store.users = store.users.map((item: any) =>
+              item.id === u.id || String(item.email || '').toLowerCase() === emailLower
+                ? { ...item, ...u }
+                : item
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(orcamentos)) {
+      const existingIds = new Set(store.orcamentos.map((o: any) => o.id));
+      for (const o of orcamentos) {
+        if (o && o.id && !['orc-1', 'orc-2', 'orc-3'].includes(o.id)) {
+          if (!existingIds.has(o.id)) {
+            store.orcamentos.unshift(o);
+            existingIds.add(o.id);
+          } else {
+            store.orcamentos = store.orcamentos.map((item: any) =>
+              item.id === o.id ? { ...item, ...o } : item
+            );
+          }
+        }
+      }
+    }
+
+    if (defaultParams && typeof defaultParams === 'object') {
+      store.defaultParams = {
+        ...store.defaultParams,
+        ...defaultParams,
+      };
+    }
+
+    writeStore(store);
+    res.json(store);
+  });
+
+  app.put('/api/store/profiles', (req, res) => {
+    const store = readStore();
+    if (Array.isArray(req.body?.profiles)) {
+      store.profiles = req.body.profiles;
+      writeStore(store);
+    }
+    res.json({ profiles: store.profiles });
+  });
+
+  app.put('/api/store/users', (req, res) => {
+    const store = readStore();
+    if (Array.isArray(req.body?.users)) {
+      store.users = req.body.users;
+      writeStore(store);
+    }
+    res.json({ users: store.users });
+  });
+
+  app.put('/api/store/orcamentos', (req, res) => {
+    const store = readStore();
+    if (Array.isArray(req.body?.orcamentos)) {
+      store.orcamentos = req.body.orcamentos;
+      writeStore(store);
+    }
+    res.json({ orcamentos: store.orcamentos });
+  });
+
+  app.post('/api/store/orcamentos', (req, res) => {
+    const store = readStore();
+    const orc = req.body?.orcamento;
+    if (orc && orc.id) {
+      const exists = store.orcamentos.some((it: any) => it.id === orc.id);
+      if (exists) {
+        store.orcamentos = store.orcamentos.map((it: any) =>
+          it.id === orc.id ? orc : it
+        );
+      } else {
+        store.orcamentos = [orc, ...store.orcamentos];
+      }
+      writeStore(store);
+    }
+    res.json({ orcamentos: store.orcamentos });
+  });
+
+  app.delete('/api/store/orcamentos/:id', (req, res) => {
+    const store = readStore();
+    const { id } = req.params;
+    store.orcamentos = store.orcamentos.filter((it: any) => it.id !== id);
+    writeStore(store);
+    res.json({ orcamentos: store.orcamentos });
+  });
+
+  app.put('/api/store/default-params', (req, res) => {
+    const store = readStore();
+    if (req.body?.defaultParams && typeof req.body.defaultParams === 'object') {
+      store.defaultParams = {
+        ...store.defaultParams,
+        ...req.body.defaultParams,
+      };
+      writeStore(store);
+    }
+    res.json({ defaultParams: store.defaultParams });
+  });
+
+  app.post('/api/store/login', (req, res) => {
+    const { email, password } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const store = readStore();
+    const matchedUser = store.users.find(
+      (u: any) => String(u.email || '').trim().toLowerCase() === cleanEmail
+    );
+    if (!matchedUser) {
+      res.status(401).json({ success: false, error: 'E-mail ou senha incorretos.' });
+      return;
+    }
+    if (matchedUser.status === 'bloqueado') {
+      res.status(403).json({
+        success: false,
+        error: 'Este usuário está bloqueado. Contate o administrador.',
+      });
+      return;
+    }
+    if (!matchedUser.password || matchedUser.password !== password) {
+      res.status(401).json({ success: false, error: 'E-mail ou senha incorretos.' });
+      return;
+    }
+    const matchedProfile = store.profiles.find(
+      (p: any) => p.id === matchedUser.profileId
+    );
+    res.json({
+      success: true,
+      user: {
+        id: matchedUser.id,
+        email: matchedUser.email,
+        fullName: matchedUser.name,
+        role:
+          matchedProfile?.name ||
+          (matchedUser.profileId === 'perfil-admin' ? 'Administrador Geral' : 'Orçamentista'),
+        createdAt: matchedUser.createdAt || new Date().toISOString(),
+      },
     });
   });
 

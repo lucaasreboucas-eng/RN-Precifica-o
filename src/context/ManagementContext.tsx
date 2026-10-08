@@ -110,10 +110,49 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   });
 
-  // Load from Supabase if configured
+  // Load from Server Store and Supabase if configured
   useEffect(() => {
-    const loadSupabaseData = async () => {
+    const loadRemoteData = async () => {
       try {
+        let localProfiles: ProfileRole[] = [];
+        let localUsers: ManagedUser[] = [];
+        try {
+          const rawProfiles = localStorage.getItem(PROFILES_STORAGE_KEY);
+          if (rawProfiles) localProfiles = JSON.parse(rawProfiles);
+        } catch {
+          localProfiles = [];
+        }
+        try {
+          const rawUsers = localStorage.getItem(USERS_STORAGE_KEY);
+          if (rawUsers) localUsers = JSON.parse(rawUsers);
+        } catch {
+          localUsers = [];
+        }
+
+        // 1. Sync with Backend Server Store (Cross-Device Persistence)
+        try {
+          const syncRes = await fetch('/api/store/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profiles: localProfiles,
+              users: localUsers,
+            }),
+          });
+          if (syncRes.ok) {
+            const storeData = await syncRes.json();
+            if (Array.isArray(storeData.profiles) && storeData.profiles.length > 0) {
+              setProfiles(storeData.profiles);
+            }
+            if (Array.isArray(storeData.users) && storeData.users.length > 0) {
+              setUsers(storeData.users);
+            }
+          }
+        } catch (serverErr) {
+          console.warn('Aviso ao sincronizar com servidor local:', serverErr);
+        }
+
+        // 2. Sync with Supabase if configured
         const client = await getSupabaseClient();
         if (!client) return;
 
@@ -149,15 +188,6 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           { onConflict: 'id' }
         );
 
-        // Sync any locally saved profiles that are not yet in Supabase
-        let localProfiles: ProfileRole[] = [];
-        try {
-          const rawProfiles = localStorage.getItem(PROFILES_STORAGE_KEY);
-          if (rawProfiles) localProfiles = JSON.parse(rawProfiles);
-        } catch {
-          localProfiles = [];
-        }
-
         const { data: profilesData, error: profilesError } = await client
           .from('profiles')
           .select('*')
@@ -188,16 +218,13 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             isSystem: Boolean(row.is_system),
             createdAt: row.created_at || new Date().toISOString(),
           }));
-          setProfiles([...mappedProfiles, ...unsyncedProfiles]);
-        }
-
-        // Sync any locally saved users that are not yet in Supabase
-        let localUsers: ManagedUser[] = [];
-        try {
-          const rawUsers = localStorage.getItem(USERS_STORAGE_KEY);
-          if (rawUsers) localUsers = JSON.parse(rawUsers);
-        } catch {
-          localUsers = [];
+          const mergedProfiles = [...mappedProfiles, ...unsyncedProfiles];
+          setProfiles(mergedProfiles);
+          fetch('/api/store/profiles', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profiles: mergedProfiles }),
+          }).catch(() => {});
         }
 
         const { data: usersData, error: usersError } = await client
@@ -237,15 +264,37 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             status: row.status === 'bloqueado' ? 'bloqueado' : 'ativo',
             createdAt: row.created_at || new Date().toISOString(),
           }));
-          setUsers([...mappedUsers, ...unsyncedUsers]);
+          const mergedUsers = [...mappedUsers, ...unsyncedUsers];
+          setUsers(mergedUsers);
+          fetch('/api/store/users', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ users: mergedUsers }),
+          }).catch(() => {});
         }
       } catch (err) {
-        console.error('Erro ao sincronizar perfis e usuários do Supabase:', err);
+        console.error('Erro ao sincronizar perfis e usuários:', err);
       }
     };
 
-    loadSupabaseData();
+    loadRemoteData();
   }, []);
+
+  const persistProfilesToServer = (nextProfiles: ProfileRole[]) => {
+    fetch('/api/store/profiles', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profiles: nextProfiles }),
+    }).catch(() => {});
+  };
+
+  const persistUsersToServer = (nextUsers: ManagedUser[]) => {
+    fetch('/api/store/users', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: nextUsers }),
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
@@ -263,7 +312,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       permissions: [],
       createdAt: new Date().toISOString(),
     };
-    setProfiles((prev) => [...prev, newProfile]);
+    setProfiles((prev) => {
+      const next = [...prev, newProfile];
+      persistProfilesToServer(next);
+      return next;
+    });
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -280,9 +333,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateProfile = async (id: string, data: Partial<ProfileRole>) => {
-    setProfiles((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...data } : item))
-    );
+    setProfiles((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, ...data } : item));
+      persistProfilesToServer(next);
+      return next;
+    });
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -311,7 +366,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         error: 'O perfil padrão de Administrador não pode ser removido.',
       };
     }
-    setProfiles((prev) => prev.filter((p) => p.id !== id));
+    setProfiles((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      persistProfilesToServer(next);
+      return next;
+    });
 
     getSupabaseClient().then((client) => {
       if (client) {
@@ -329,8 +388,8 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const toggleSubTabAccess = (profileId: string, subTabId: string) => {
-    setProfiles((prev) =>
-      prev.map((profile) => {
+    setProfiles((prev) => {
+      const next = prev.map((profile) => {
         if (profile.id !== profileId) return profile;
         const hasAccess = profile.permissions.includes(subTabId);
         const newPermissions = hasAccess
@@ -353,8 +412,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ...profile,
           permissions: newPermissions,
         };
-      })
-    );
+      });
+      persistProfilesToServer(next);
+      return next;
+    });
   };
 
   const toggleMainTabAccess = (profileId: string, mainTabId: string) => {
@@ -362,8 +423,8 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!mainTab) return;
 
     if (mainTab.subTabs.length === 0) {
-      setProfiles((prev) =>
-        prev.map((profile) => {
+      setProfiles((prev) => {
+        const next = prev.map((profile) => {
           if (profile.id !== profileId) return profile;
           const hasAccess = profile.permissions.includes(mainTabId);
           const newPermissions = hasAccess
@@ -386,15 +447,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             ...profile,
             permissions: newPermissions,
           };
-        })
-      );
+        });
+        persistProfilesToServer(next);
+        return next;
+      });
       return;
     }
 
     const subTabIds = mainTab.subTabs.map((s) => s.id);
 
-    setProfiles((prev) =>
-      prev.map((profile) => {
+    setProfiles((prev) => {
+      const next = prev.map((profile) => {
         if (profile.id !== profileId) return profile;
         const allEnabled = subTabIds.every((id) => profile.permissions.includes(id));
         const newPermissions = allEnabled
@@ -417,8 +480,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ...profile,
           permissions: newPermissions,
         };
-      })
-    );
+      });
+      persistProfilesToServer(next);
+      return next;
+    });
   };
 
   const addUser = async (userData: Omit<ManagedUser, 'id' | 'createdAt'>) => {
@@ -427,7 +492,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       id: `user-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
-    setUsers((prev) => [...prev, newUser]);
+    setUsers((prev) => {
+      const next = [...prev, newUser];
+      persistUsersToServer(next);
+      return next;
+    });
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -445,9 +514,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateUser = async (id: string, userData: Partial<ManagedUser>) => {
-    setUsers((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...userData } : item))
-    );
+    setUsers((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, ...userData } : item));
+      persistUsersToServer(next);
+      return next;
+    });
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -464,7 +535,11 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const deleteUser = async (id: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    setUsers((prev) => {
+      const next = prev.filter((u) => u.id !== id);
+      persistUsersToServer(next);
+      return next;
+    });
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -474,8 +549,8 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const toggleUserStatus = (id: string) => {
-    setUsers((prev) =>
-      prev.map((item) => {
+    setUsers((prev) => {
+      const next = prev.map((item) => {
         if (item.id !== id) return item;
         const nextStatus = item.status === 'ativo' ? 'bloqueado' : 'ativo';
 
@@ -492,8 +567,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
 
         return { ...item, status: nextStatus };
-      })
-    );
+      });
+      persistUsersToServer(next);
+      return next;
+    });
   };
 
   return (

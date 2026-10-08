@@ -49,12 +49,6 @@ export const OrcamentosView: React.FC = () => {
   useEffect(() => {
     const loadOrcamentos = async () => {
       try {
-        const client = await getSupabaseClient();
-        if (!client) return;
-
-        await client.from('orcamentos').delete().in('id', ['orc-1', 'orc-2', 'orc-3']);
-
-        // First, sync any locally stored quotes that may have been created before Supabase was connected
         let localQuotes: Orcamento[] = [];
         try {
           const rawLocal = localStorage.getItem(STORAGE_KEY);
@@ -64,6 +58,30 @@ export const OrcamentosView: React.FC = () => {
         } catch {
           localQuotes = [];
         }
+
+        // 1. Sync with Backend Server Store (Cross-Device Persistence)
+        try {
+          const syncRes = await fetch('/api/store/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orcamentos: localQuotes }),
+          });
+          if (syncRes.ok) {
+            const storeData = await syncRes.json();
+            if (Array.isArray(storeData.orcamentos)) {
+              setOrcamentos(storeData.orcamentos);
+              localQuotes = storeData.orcamentos;
+            }
+          }
+        } catch (serverErr) {
+          console.warn('Aviso ao sincronizar orçamentos com o servidor:', serverErr);
+        }
+
+        // 2. Sync with Supabase if configured
+        const client = await getSupabaseClient();
+        if (!client) return;
+
+        await client.from('orcamentos').delete().in('id', ['orc-1', 'orc-2', 'orc-3']);
 
         const { data, error } = await client
           .from('orcamentos')
@@ -115,10 +133,16 @@ export const OrcamentosView: React.FC = () => {
             base: Number(row.base) || 0,
           }));
 
-          setOrcamentos([...unsyncedLocal, ...mappedRemote]);
+          const merged = [...unsyncedLocal, ...mappedRemote];
+          setOrcamentos(merged);
+          fetch('/api/store/orcamentos', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orcamentos: merged }),
+          }).catch(() => {});
         }
       } catch (err) {
-        console.error('Erro ao carregar orçamentos do Supabase:', err);
+        console.error('Erro ao carregar orçamentos:', err);
       }
     };
 
@@ -147,6 +171,16 @@ export const OrcamentosView: React.FC = () => {
       }
       return [savedOrc, ...prev];
     });
+
+    try {
+      await fetch('/api/store/orcamentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orcamento: savedOrc }),
+      });
+    } catch (err) {
+      console.error('Erro ao salvar orçamento no servidor:', err);
+    }
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
@@ -184,6 +218,14 @@ export const OrcamentosView: React.FC = () => {
     const idToDelete = deletingOrcamento.id;
     setOrcamentos((prev) => prev.filter((item) => item.id !== idToDelete));
     setDeletingOrcamento(null);
+
+    try {
+      await fetch(`/api/store/orcamentos/${encodeURIComponent(idToDelete)}`, {
+        method: 'DELETE',
+      });
+    } catch (err) {
+      console.error('Erro ao excluir orçamento no servidor:', err);
+    }
 
     const client = supabase || (await getSupabaseClient());
     if (client) {

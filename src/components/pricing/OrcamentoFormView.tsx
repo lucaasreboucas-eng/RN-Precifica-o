@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ArrowLeft,
   Save,
@@ -191,6 +191,96 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       antecipacaoPercent: String(startParams.antecipacaoPercent),
     };
   });
+
+  // Carrega os parâmetros padrão salvos no servidor para garantir sincronização entre computadores
+  useEffect(() => {
+    let isMounted = true;
+    const syncDefaultsFromServer = async () => {
+      try {
+        const res = await fetch('/api/store');
+        if (!res.ok) return;
+        const data = await res.json();
+        const remoteDefaults = data?.defaultParams;
+        if (remoteDefaults && typeof remoteDefaults === 'object' && isMounted) {
+          const validDefaults: PricingParameters = {
+            margemLucroPercent:
+              typeof remoteDefaults.margemLucroPercent === 'number'
+                ? remoteDefaults.margemLucroPercent
+                : FALLBACK_DEFAULT_PARAMS.margemLucroPercent,
+            impostoFaturamentoPercent:
+              typeof remoteDefaults.impostoFaturamentoPercent === 'number'
+                ? remoteDefaults.impostoFaturamentoPercent
+                : FALLBACK_DEFAULT_PARAMS.impostoFaturamentoPercent,
+            taxaAdministrativaPercent:
+              typeof remoteDefaults.taxaAdministrativaPercent === 'number'
+                ? remoteDefaults.taxaAdministrativaPercent
+                : FALLBACK_DEFAULT_PARAMS.taxaAdministrativaPercent,
+            comissaoVendedorPercent:
+              typeof remoteDefaults.comissaoVendedorPercent === 'number'
+                ? remoteDefaults.comissaoVendedorPercent
+                : FALLBACK_DEFAULT_PARAMS.comissaoVendedorPercent,
+            issPercent:
+              typeof remoteDefaults.issPercent === 'number'
+                ? remoteDefaults.issPercent
+                : FALLBACK_DEFAULT_PARAMS.issPercent,
+            antecipacaoPercent:
+              typeof remoteDefaults.antecipacaoPercent === 'number'
+                ? remoteDefaults.antecipacaoPercent
+                : FALLBACK_DEFAULT_PARAMS.antecipacaoPercent,
+          };
+          setDefaultParams(validDefaults);
+          try {
+            localStorage.setItem(DEFAULT_PARAMS_STORAGE_KEY, JSON.stringify(validDefaults));
+          } catch {
+            // ignore
+          }
+          if (!initialOrcamento) {
+            setParams(validDefaults);
+            setParamInputs({
+              margemLucroPercent: String(validDefaults.margemLucroPercent),
+              impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
+              taxaAdministrativaPercent: String(validDefaults.taxaAdministrativaPercent),
+              comissaoVendedorPercent: String(validDefaults.comissaoVendedorPercent),
+              issPercent: String(validDefaults.issPercent),
+              antecipacaoPercent: String(validDefaults.antecipacaoPercent),
+            });
+            setPreviousParamValues({
+              margemLucroPercent: {
+                num: validDefaults.margemLucroPercent,
+                text: String(validDefaults.margemLucroPercent),
+              },
+              impostoFaturamentoPercent: {
+                num: validDefaults.impostoFaturamentoPercent,
+                text: String(validDefaults.impostoFaturamentoPercent),
+              },
+              taxaAdministrativaPercent: {
+                num: validDefaults.taxaAdministrativaPercent,
+                text: String(validDefaults.taxaAdministrativaPercent),
+              },
+              comissaoVendedorPercent: {
+                num: validDefaults.comissaoVendedorPercent,
+                text: String(validDefaults.comissaoVendedorPercent),
+              },
+              issPercent: {
+                num: validDefaults.issPercent,
+                text: String(validDefaults.issPercent),
+              },
+              antecipacaoPercent: {
+                num: validDefaults.antecipacaoPercent,
+                text: String(validDefaults.antecipacaoPercent),
+              },
+            });
+          }
+        }
+      } catch {
+        // ignore network errors
+      }
+    };
+    syncDefaultsFromServer();
+    return () => {
+      isMounted = false;
+    };
+  }, [initialOrcamento]);
 
   // Controle de modo de edição individual por parâmetro
   const [editingParams, setEditingParams] = useState<Record<ParamKey, boolean>>({
@@ -613,6 +703,12 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     } catch {
       // Ignore storage errors
     }
+
+    fetch('/api/store/default-params', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultParams: updatedDefaults }),
+    }).catch(() => {});
 
     setDefaultParams(updatedDefaults);
     setParams((prev) => ({
