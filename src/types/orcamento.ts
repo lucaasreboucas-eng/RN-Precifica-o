@@ -49,6 +49,8 @@ export interface Orcamento {
   clientName: string;
   date: string;
   responsavel: string;
+  createdByEmail?: string;
+  createdByUserId?: string;
   status: 'Pendente' | 'Em Análise' | 'Aprovado' | 'Recusado';
   parametros: PricingParameters;
   itens: OrcamentoItem[];

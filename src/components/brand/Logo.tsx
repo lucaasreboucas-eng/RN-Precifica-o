@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import brandLogoImg from '../../assets/images/rn_brand_logo_1790685016122.jpg';
 
 export interface LogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -15,8 +16,8 @@ export const Logo: React.FC<LogoProps> = ({
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
 
-  // Exact generated asset path from Phase 1
-  const logoSrc = '/src/assets/images/rn_brand_logo_1790685016122.jpg';
+  // Bundled logo asset (also served as /favicon.jpg)
+  const logoSrc = brandLogoImg || '/favicon.jpg';
 
   const sizeDimensions = {
     sm: { img: 'w-8 h-8', title: 'text-sm', sub: 'text-[9px]' },

@@ -17,12 +17,18 @@ import type { Orcamento } from '../../types/orcamento';
 import { OrcamentoFormView } from './OrcamentoFormView';
 import { formatCurrencyBRL } from '../../utils/pricingEngine';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 const STORAGE_KEY = 'rn_precificacao_orcamentos_prod_v1';
 
 const INITIAL_ORCAMENTOS: Orcamento[] = [];
 
 export const OrcamentosView: React.FC = () => {
+  const { user } = useAuth();
+  const isGeneralAdmin =
+    user?.email?.toLowerCase().trim() === 'adm@rnprecificacao.com.br' ||
+    user?.role === 'Administrador Geral';
+
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>(() => {
     try {
       localStorage.removeItem('rn_precificacao_orcamentos_data_v2');
@@ -60,6 +66,8 @@ export const OrcamentosView: React.FC = () => {
             clientName: row.client_name,
             date: row.date,
             responsavel: row.responsavel,
+            createdByEmail: row.parametros?._createdByEmail || undefined,
+            createdByUserId: row.parametros?._createdByUserId || undefined,
             status: row.status || 'Pendente',
             parametros: row.parametros,
             itens: Array.isArray(row.itens) ? row.itens : [],
@@ -110,7 +118,11 @@ export const OrcamentosView: React.FC = () => {
           date: savedOrc.date,
           responsavel: savedOrc.responsavel,
           status: savedOrc.status,
-          parametros: savedOrc.parametros,
+          parametros: {
+            ...savedOrc.parametros,
+            _createdByEmail: savedOrc.createdByEmail,
+            _createdByUserId: savedOrc.createdByUserId,
+          },
           itens: savedOrc.itens,
           total_value: savedOrc.totalValue,
           custo_total: savedOrc.custoTotal || 0,
@@ -163,7 +175,31 @@ export const OrcamentosView: React.FC = () => {
     );
   }
 
-  const filteredOrcamentos = orcamentos.filter((orc) => {
+  // Regra de visibilidade:
+  // - Somente o Administrador Geral (adm@rnprecificacao.com.br) vê todos os orçamentos.
+  // - Cada usuário vê apenas os orçamentos que ele mesmo criou.
+  const isMasterAdmin = user?.email?.toLowerCase().trim() === 'adm@rnprecificacao.com.br';
+
+  const visibleOrcamentos = orcamentos.filter((orc) => {
+    if (isMasterAdmin) return true;
+
+    const currentEmail = user?.email?.toLowerCase().trim();
+    const currentUserId = user?.id;
+    const currentFullName = user?.fullName?.toLowerCase().trim();
+
+    if (orc.createdByEmail && currentEmail) {
+      return orc.createdByEmail.toLowerCase().trim() === currentEmail;
+    }
+    if (orc.createdByUserId && currentUserId) {
+      return orc.createdByUserId === currentUserId;
+    }
+    if (orc.responsavel && currentFullName) {
+      return orc.responsavel.toLowerCase().trim() === currentFullName;
+    }
+    return false;
+  });
+
+  const filteredOrcamentos = visibleOrcamentos.filter((orc) => {
     const term = searchTerm.toLowerCase();
     return (
       orc.osNumber.toLowerCase().includes(term) ||
@@ -171,7 +207,7 @@ export const OrcamentosView: React.FC = () => {
     );
   });
 
-  const totalGeral = orcamentos.reduce((acc, curr) => acc + curr.totalValue, 0);
+  const totalGeral = visibleOrcamentos.reduce((acc, curr) => acc + curr.totalValue, 0);
 
   return (
     <div className="space-y-6 text-left">

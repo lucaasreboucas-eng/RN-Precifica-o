@@ -316,6 +316,8 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       clientName: clientName.trim(),
       date,
       responsavel: (responsavel || usuarioLogado).trim(),
+      createdByEmail: initialOrcamento?.createdByEmail || user?.email?.toLowerCase().trim(),
+      createdByUserId: initialOrcamento?.createdByUserId || user?.id,
       status: initialOrcamento?.status || 'Pendente',
       parametros: params,
       itens,
