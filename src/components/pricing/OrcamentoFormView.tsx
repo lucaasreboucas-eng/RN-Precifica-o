@@ -45,22 +45,7 @@ const DEFAULT_PARAMS: PricingParameters = {
   antecipacaoPercent: 1.5, // 1.5%
 };
 
-const DEFAULT_ITEMS: OrcamentoItem[] = [
-  {
-    id: 'item-1',
-    produto: 'Retífica de Bloco de Motor Diesel',
-    descricao: 'Usinagem completa, brunimento de camisas e teste de trincas',
-    quantidade: 1,
-    custoUnitario: 3200,
-  },
-  {
-    id: 'item-2',
-    produto: 'Jogo de Pistões e Anéis Forjados',
-    descricao: 'Substituição por peças originais com tolerância calibrada',
-    quantidade: 6,
-    custoUnitario: 450,
-  },
-];
+const DEFAULT_ITEMS: OrcamentoItem[] = [];
 
 export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
   initialOrcamento,

@@ -62,8 +62,12 @@ CREATE POLICY "Acesso completo orcamentos" ON public.orcamentos
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================================================
--- DADOS INICIAIS PADRÃO (Perfis e Administrador Inicial)
+-- DADOS INICIAIS PADRÃO (Perfil e Administrador Geral)
 -- ============================================================================
+DELETE FROM public.orcamentos WHERE id IN ('orc-1', 'orc-2', 'orc-3');
+DELETE FROM public.managed_users WHERE id IN ('user-1', 'user-2');
+DELETE FROM public.profiles WHERE id = 'perfil-orcamentista';
+
 INSERT INTO public.profiles (id, name, description, permissions, is_system)
 VALUES
   (
@@ -72,13 +76,6 @@ VALUES
     'Acesso total a todas as abas e sub-abas.',
     '["gestao-precos-orcamentos", "configuracoes-perfis", "configuracoes-usuarios"]'::jsonb,
     true
-  ),
-  (
-    'perfil-orcamentista',
-    'Orçamentista',
-    'Acesso restrito.',
-    '["gestao-precos-orcamentos", "configuracoes-perfis"]'::jsonb,
-    false
   )
 ON CONFLICT (id) DO NOTHING;
 
@@ -90,22 +87,6 @@ VALUES
     'adm@rnprecificacao.com.br',
     'adm12345',
     'perfil-admin',
-    'ativo'
-  ),
-  (
-    'user-1',
-    'Lucas Rebouças',
-    'lucas@rnprecificacao.com.br',
-    NULL,
-    'perfil-admin',
-    'ativo'
-  ),
-  (
-    'user-2',
-    'Carlos Alberto Mendes',
-    'carlos.mendes@rnprecificacao.com.br',
-    NULL,
-    'perfil-orcamentista',
     'ativo'
   )
 ON CONFLICT (id) DO UPDATE SET

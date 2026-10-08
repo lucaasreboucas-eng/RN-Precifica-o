@@ -18,112 +18,14 @@ import { OrcamentoFormView } from './OrcamentoFormView';
 import { formatCurrencyBRL } from '../../utils/pricingEngine';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
-const STORAGE_KEY = 'rn_precificacao_orcamentos_data_v2';
+const STORAGE_KEY = 'rn_precificacao_orcamentos_prod_v1';
 
-const INITIAL_ORCAMENTOS: Orcamento[] = [
-  {
-    id: 'orc-1',
-    osNumber: 'OS-1045',
-    clientName: 'Transportadora Silva & Filhos Ltda',
-    date: '2026-09-28',
-    responsavel: 'Lucas Rebouças',
-    status: 'Aprovado',
-    parametros: {
-      margemLucroPercent: 30,
-      impostoFaturamentoPercent: 6,
-      taxaAdministrativaPercent: 5,
-      comissaoVendedorPercent: 3,
-      issPercent: 2,
-      antecipacaoPercent: 1.5,
-    },
-    itens: [
-      {
-        id: 'it-1',
-        produto: 'Retífica de Virabrequim Scania DC13',
-        descricao: 'Polimento e alinhamento micrométrico',
-        quantidade: 1,
-        custoUnitario: 3500,
-      },
-      {
-        id: 'it-2',
-        produto: 'Jogo de Bronzinas de Biela e Mancal',
-        descricao: 'Medida 0,25mm STD',
-        quantidade: 1,
-        custoUnitario: 1200,
-      },
-    ],
-    totalValue: 7392.62,
-    custoTotal: 4700,
-    base: 6110,
-  },
-  {
-    id: 'orc-2',
-    osNumber: 'OS-1046',
-    clientName: 'Frotas Express Distribuidora',
-    date: '2026-09-27',
-    responsavel: 'Carlos Alberto Mendes',
-    status: 'Em Análise',
-    parametros: {
-      margemLucroPercent: 25,
-      impostoFaturamentoPercent: 6,
-      taxaAdministrativaPercent: 5,
-      comissaoVendedorPercent: 3,
-      issPercent: 2,
-      antecipacaoPercent: 1.5,
-    },
-    itens: [
-      {
-        id: 'it-3',
-        produto: 'Usinagem de Cabeçote Volvo FH',
-        descricao: 'Assentamento de válvulas e plaina de face',
-        quantidade: 1,
-        custoUnitario: 2100,
-      },
-    ],
-    totalValue: 3176.04,
-    custoTotal: 2100,
-    base: 2625,
-  },
-  {
-    id: 'orc-3',
-    osNumber: 'OS-1047',
-    clientName: 'Logística TransRodoviária Sul',
-    date: '2026-09-26',
-    responsavel: 'Lucas Rebouças',
-    status: 'Pendente',
-    parametros: {
-      margemLucroPercent: 35,
-      impostoFaturamentoPercent: 6,
-      taxaAdministrativaPercent: 5,
-      comissaoVendedorPercent: 3,
-      issPercent: 2,
-      antecipacaoPercent: 1.5,
-    },
-    itens: [
-      {
-        id: 'it-4',
-        produto: 'Recondicionamento de Bloco Mercedes OM457',
-        descricao: 'Encamisamento e retífica de alojamentos',
-        quantidade: 1,
-        custoUnitario: 5800,
-      },
-      {
-        id: 'it-5',
-        produto: 'Kit de Pistões com Pinos e Travas',
-        descricao: 'Kit original Mahle',
-        quantidade: 6,
-        custoUnitario: 480,
-      },
-    ],
-    totalValue: 14185.73,
-    custoTotal: 8680,
-    base: 11718,
-  },
-];
+const INITIAL_ORCAMENTOS: Orcamento[] = [];
 
 export const OrcamentosView: React.FC = () => {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>(() => {
     try {
+      localStorage.removeItem('rn_precificacao_orcamentos_data_v2');
       const saved = localStorage.getItem(STORAGE_KEY);
       return saved ? JSON.parse(saved) : INITIAL_ORCAMENTOS;
     } catch {
@@ -144,12 +46,14 @@ export const OrcamentosView: React.FC = () => {
 
     const loadOrcamentos = async () => {
       try {
+        await client.from('orcamentos').delete().in('id', ['orc-1', 'orc-2', 'orc-3']);
+
         const { data, error } = await client
           .from('orcamentos')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const mapped: Orcamento[] = data.map((row: any) => ({
             id: row.id,
             osNumber: row.os_number,

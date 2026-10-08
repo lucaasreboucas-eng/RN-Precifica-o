@@ -23,12 +23,28 @@ export const LoginPage: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    const cleanEmail = email.trim();
+    const newErrors: { email?: string; password?: string } = {};
+
+    if (!cleanEmail) {
+      newErrors.email = 'Informe o e-mail corporativo.';
+    }
+    if (!password) {
+      newErrors.password = 'Informe a senha de acesso.';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const result = await signIn({
-        email: email.trim() || 'adm@rnprecificacao.com.br',
-        password: password || 'adm12345',
+        email: cleanEmail,
+        password: password,
       });
       if (!result.success && result.error) {
         setErrors({ general: result.error });

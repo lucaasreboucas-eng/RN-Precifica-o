@@ -43,14 +43,6 @@ const INITIAL_PROFILES: ProfileRole[] = [
     isSystem: true,
     createdAt: new Date().toISOString(),
   },
-  {
-    id: 'perfil-orcamentista',
-    name: 'Orçamentista',
-    description: 'Acesso restrito.',
-    permissions: ['gestao-precos-orcamentos', 'configuracoes-perfis'],
-    isSystem: false,
-    createdAt: new Date().toISOString(),
-  },
 ];
 
 const INITIAL_USERS: ManagedUser[] = [
@@ -60,22 +52,6 @@ const INITIAL_USERS: ManagedUser[] = [
     email: 'adm@rnprecificacao.com.br',
     password: 'adm12345',
     profileId: 'perfil-admin',
-    status: 'ativo',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'user-1',
-    name: 'Lucas Rebouças',
-    email: 'lucas@rnprecificacao.com.br',
-    profileId: 'perfil-admin',
-    status: 'ativo',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'user-2',
-    name: 'Carlos Alberto Mendes',
-    email: 'carlos.mendes@rnprecificacao.com.br',
-    profileId: 'perfil-orcamentista',
     status: 'ativo',
     createdAt: new Date().toISOString(),
   },
@@ -98,12 +74,13 @@ interface ManagementContextType {
 
 const ManagementContext = createContext<ManagementContextType | undefined>(undefined);
 
-const PROFILES_STORAGE_KEY = 'rn_precificacao_profiles_subtabs_v5';
-const USERS_STORAGE_KEY = 'rn_precificacao_users_subtabs_v5';
+const PROFILES_STORAGE_KEY = 'rn_precificacao_profiles_prod_v1';
+const USERS_STORAGE_KEY = 'rn_precificacao_users_prod_v1';
 
 export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [profiles, setProfiles] = useState<ProfileRole[]>(() => {
     try {
+      localStorage.removeItem('rn_precificacao_profiles_subtabs_v5');
       const saved = localStorage.getItem(PROFILES_STORAGE_KEY);
       return saved ? JSON.parse(saved) : INITIAL_PROFILES;
     } catch {
@@ -113,9 +90,12 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const [users, setUsers] = useState<ManagedUser[]>(() => {
     try {
+      localStorage.removeItem('rn_precificacao_users_subtabs_v5');
       const saved = localStorage.getItem(USERS_STORAGE_KEY);
       if (saved) {
-        const parsed: ManagedUser[] = JSON.parse(saved);
+        const parsed: ManagedUser[] = JSON.parse(saved).filter(
+          (u: ManagedUser) => u.id !== 'user-1' && u.id !== 'user-2'
+        );
         const hasAdm = parsed.some(
           (u) => u.email.toLowerCase() === 'adm@rnprecificacao.com.br'
         );
@@ -137,6 +117,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const loadSupabaseData = async () => {
       try {
+        // Remove legacy test users and test profile if they exist in Supabase
+        await client.from('managed_users').delete().in('id', ['user-1', 'user-2']);
+        await client.from('profiles').delete().eq('id', 'perfil-orcamentista');
+
         // Ensure default admin profile and adm@rnprecificacao.com.br exist in Supabase
         await client.from('profiles').upsert(
           {

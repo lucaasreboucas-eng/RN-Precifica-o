@@ -16,7 +16,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_DEMO_USER_KEY = 'rn_precificacao_demo_session';
+const LOCAL_STORAGE_SESSION_KEY = 'rn_precificacao_auth_session_v1';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -30,6 +30,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const checkSession = async () => {
       try {
+        // Clear old automatic demo session key
+        localStorage.removeItem('rn_precificacao_demo_session');
+
         if (isConfigured && supabase) {
           const { data, error } = await supabase.auth.getSession();
           if (!error && data?.session?.user && isMounted) {
@@ -46,15 +49,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // Check local demo persistence if not in Supabase or if Supabase session is empty
-        const cachedDemoUser = localStorage.getItem(LOCAL_STORAGE_DEMO_USER_KEY);
-        if (cachedDemoUser && isMounted) {
+        // Check local session persistence if not in Supabase or if Supabase session is empty
+        const cachedSessionUser = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+        if (cachedSessionUser && isMounted) {
           try {
-            const parsed = JSON.parse(cachedDemoUser);
-            setUser(parsed);
-            setSessionToken('demo-token-active');
+            const parsed = JSON.parse(cachedSessionUser);
+            if (parsed?.id && parsed?.email) {
+              setUser(parsed);
+              setSessionToken('auth-session-active');
+            } else {
+              localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+            }
           } catch {
-            localStorage.removeItem(LOCAL_STORAGE_DEMO_USER_KEY);
+            localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
           }
         }
       } catch (err) {
@@ -83,7 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSessionToken(session.access_token);
           } else {
             // User signed out in Supabase
-            if (!localStorage.getItem(LOCAL_STORAGE_DEMO_USER_KEY)) {
+            if (!localStorage.getItem(LOCAL_STORAGE_SESSION_KEY)) {
               setUser(null);
               setSessionToken(null);
             }
@@ -108,6 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       const cleanEmail = email.trim().toLowerCase();
 
+      if (!cleanEmail || !password) {
+        setIsLoading(false);
+        return {
+          success: false,
+          error: 'Informe seu e-mail e senha para entrar.',
+        };
+      }
+
       try {
         // 1. Check master general user adm@rnprecificacao.com.br
         if (cleanEmail === 'adm@rnprecificacao.com.br' && password === 'adm12345') {
@@ -118,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'Administrador Geral',
             createdAt: new Date().toISOString(),
           };
-          localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(masterAdminUser));
+          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(masterAdminUser));
           setUser(masterAdminUser);
           setSessionToken('master-admin-session');
           setIsLoading(false);
@@ -142,7 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               };
             }
 
-            if (!managedUser.password || managedUser.password === password) {
+            if (managedUser.password && managedUser.password === password) {
               const authenticatedManagedUser: UserProfile = {
                 id: managedUser.id,
                 email: managedUser.email,
@@ -151,7 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 createdAt: managedUser.created_at || new Date().toISOString(),
               };
               localStorage.setItem(
-                LOCAL_STORAGE_DEMO_USER_KEY,
+                LOCAL_STORAGE_SESSION_KEY,
                 JSON.stringify(authenticatedManagedUser)
               );
               setUser(authenticatedManagedUser);
@@ -201,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // 4. Check local storage managed users
         try {
-          const savedUsersRaw = localStorage.getItem('rn_precificacao_users_subtabs_v5');
+          const savedUsersRaw = localStorage.getItem('rn_precificacao_users_prod_v1');
           if (savedUsersRaw) {
             const savedUsers = JSON.parse(savedUsersRaw);
             const matchedLocalUser = savedUsers.find(
@@ -215,7 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   error: 'Este usuário está bloqueado. Contate o administrador.',
                 };
               }
-              if (!matchedLocalUser.password || matchedLocalUser.password === password) {
+              if (matchedLocalUser.password && matchedLocalUser.password === password) {
                 const localUserData: UserProfile = {
                   id: matchedLocalUser.id,
                   email: matchedLocalUser.email,
@@ -226,7 +241,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       : 'Orçamentista',
                   createdAt: matchedLocalUser.createdAt || new Date().toISOString(),
                 };
-                localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(localUserData));
+                localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(localUserData));
                 setUser(localUserData);
                 setSessionToken('auth-session-active');
                 setIsLoading(false);
@@ -241,25 +256,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // ignore parse error
         }
 
-        // Fallback / direct access mode
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
-        const userEmail = email.trim() || 'adm@rnprecificacao.com.br';
-        const demoUserData: UserProfile = {
-          id: 'user-adm',
-          email: userEmail,
-          fullName: userEmail.includes('@')
-            ? userEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-            : 'Administrador Geral',
-          role: 'Administrador Geral',
-          createdAt: new Date().toISOString(),
-        };
-
-        localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(demoUserData));
-        setUser(demoUserData);
-        setSessionToken('auth-session-active');
         setIsLoading(false);
-        return { success: true };
+        return {
+          success: false,
+          error: 'E-mail ou senha incorretos.',
+        };
       } catch (err: any) {
         setIsLoading(false);
         return {
@@ -272,21 +273,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const loginAsDemo = useCallback(async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    const demoUser: UserProfile = {
-      id: 'demo-admin-rn',
-      email: 'gestor@rnprecificacao.com.br',
-      fullName: 'Gestor RN Precificação',
-      role: 'Administrador Principal',
-      createdAt: new Date().toISOString(),
-    };
-
-    localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(demoUser));
-    setUser(demoUser);
-    setSessionToken('demo-auth-session');
-    setIsLoading(false);
+    // No longer used
   }, []);
 
   const signOut = useCallback(async () => {
@@ -298,7 +285,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Erro ao encerrar sessão no Supabase:', err);
     } finally {
-      localStorage.removeItem(LOCAL_STORAGE_DEMO_USER_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+      localStorage.removeItem('rn_precificacao_demo_session');
       setUser(null);
       setSessionToken(null);
       setIsLoading(false);
