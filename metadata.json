@@ -1,0 +1,8 @@
+{
+  "name": "RN Precificação",
+  "description": "Sistema moderno de cálculo e gestão de orçamentos e precificação com autenticação segura e alta performance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

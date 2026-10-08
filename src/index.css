@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Rajdhani', 'Plus Jakarta Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #080C14;
+    color: #F8FAFC;
+    overflow-x: hidden;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0D1526;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1E293B;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Subtle metallic gold gradient text */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #FFF0B8 0%, #D4AF37 50%, #A87D17 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Subtle chrome/silver gradient text */
+.text-silver-gradient {
+  background: linear-gradient(180deg, #FFFFFF 0%, #E2E8F0 50%, #94A3B8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Metallic gold button gradient */
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #ECC863 0%, #D4AF37 50%, #B88916 100%);
+}
+
+.bg-gold-gradient:hover {
+  background: linear-gradient(135deg, #F3D57C 0%, #DEBA46 50%, #C9961B 100%);
+}
+
+/* Metallic gold border sheen */
+.border-gold-sheen {
+  border-color: rgba(212, 175, 55, 0.35);
+}
+
+/* Subtle card glass surface */
+.bg-navy-surface {
+  background: linear-gradient(180deg, rgba(16, 27, 48, 0.85) 0%, rgba(10, 18, 33, 0.95) 100%);
+  backdrop-filter: blur(16px);
+}
