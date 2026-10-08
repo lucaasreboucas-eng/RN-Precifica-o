@@ -106,9 +106,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = useCallback(
     async ({ email, password }: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
       setIsLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
 
       try {
+        // 1. Check master general user adm@rnprecificacao.com.br
+        if (cleanEmail === 'adm@rnprecificacao.com.br' && password === 'adm12345') {
+          const masterAdminUser: UserProfile = {
+            id: 'user-adm',
+            email: 'adm@rnprecificacao.com.br',
+            fullName: 'Administrador Geral',
+            role: 'Administrador Geral',
+            createdAt: new Date().toISOString(),
+          };
+          localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(masterAdminUser));
+          setUser(masterAdminUser);
+          setSessionToken('master-admin-session');
+          setIsLoading(false);
+          return { success: true };
+        }
+
+        // 2. Check Supabase managed_users table if configured
         if (isConfigured && supabase) {
+          const { data: managedUser } = await supabase
+            .from('managed_users')
+            .select('*, profiles(name)')
+            .ilike('email', cleanEmail)
+            .maybeSingle();
+
+          if (managedUser) {
+            if (managedUser.status === 'bloqueado') {
+              setIsLoading(false);
+              return {
+                success: false,
+                error: 'Este usuário está bloqueado. Contate o administrador.',
+              };
+            }
+
+            if (!managedUser.password || managedUser.password === password) {
+              const authenticatedManagedUser: UserProfile = {
+                id: managedUser.id,
+                email: managedUser.email,
+                fullName: managedUser.name,
+                role: managedUser.profiles?.name || 'Administrador Geral',
+                createdAt: managedUser.created_at || new Date().toISOString(),
+              };
+              localStorage.setItem(
+                LOCAL_STORAGE_DEMO_USER_KEY,
+                JSON.stringify(authenticatedManagedUser)
+              );
+              setUser(authenticatedManagedUser);
+              setSessionToken('managed-user-session');
+              setIsLoading(false);
+              return { success: true };
+            } else {
+              setIsLoading(false);
+              return { success: false, error: 'E-mail ou senha incorretos.' };
+            }
+          }
+
+          // 3. Try Supabase Auth
           const { data, error } = await supabase.auth.signInWithPassword({
             email: email.trim(),
             password,
@@ -116,7 +172,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (error) {
             setIsLoading(false);
-            // Translate common Supabase Auth errors to Portuguese
             let errorMessage = 'Falha ao autenticar. Verifique suas credenciais.';
             if (error.message.includes('Invalid login credentials')) {
               errorMessage = 'E-mail ou senha incorretos.';
@@ -135,7 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: data.user.id,
               email: data.user.email || email,
               fullName: data.user.user_metadata?.full_name || email.split('@')[0],
-              role: 'Administrador',
+              role: 'Administrador Geral',
               createdAt: data.user.created_at,
             });
             setSessionToken(data.session?.access_token || 'active-session');
@@ -144,17 +199,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
+        // 4. Check local storage managed users
+        try {
+          const savedUsersRaw = localStorage.getItem('rn_precificacao_users_subtabs_v5');
+          if (savedUsersRaw) {
+            const savedUsers = JSON.parse(savedUsersRaw);
+            const matchedLocalUser = savedUsers.find(
+              (u: any) => u.email?.toLowerCase() === cleanEmail
+            );
+            if (matchedLocalUser) {
+              if (matchedLocalUser.status === 'bloqueado') {
+                setIsLoading(false);
+                return {
+                  success: false,
+                  error: 'Este usuário está bloqueado. Contate o administrador.',
+                };
+              }
+              if (!matchedLocalUser.password || matchedLocalUser.password === password) {
+                const localUserData: UserProfile = {
+                  id: matchedLocalUser.id,
+                  email: matchedLocalUser.email,
+                  fullName: matchedLocalUser.name,
+                  role:
+                    matchedLocalUser.profileId === 'perfil-admin'
+                      ? 'Administrador Geral'
+                      : 'Orçamentista',
+                  createdAt: matchedLocalUser.createdAt || new Date().toISOString(),
+                };
+                localStorage.setItem(LOCAL_STORAGE_DEMO_USER_KEY, JSON.stringify(localUserData));
+                setUser(localUserData);
+                setSessionToken('auth-session-active');
+                setIsLoading(false);
+                return { success: true };
+              } else {
+                setIsLoading(false);
+                return { success: false, error: 'E-mail ou senha incorretos.' };
+              }
+            }
+          }
+        } catch {
+          // ignore parse error
+        }
+
         // Fallback / direct access mode
         await new Promise((resolve) => setTimeout(resolve, 300));
 
-        const userEmail = email.trim() || 'gestor@rnprecificacao.com.br';
+        const userEmail = email.trim() || 'adm@rnprecificacao.com.br';
         const demoUserData: UserProfile = {
-          id: 'gestor-rn',
+          id: 'user-adm',
           email: userEmail,
           fullName: userEmail.includes('@')
             ? userEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-            : 'Gestor RN Precificação',
-          role: 'Administrador Gestor',
+            : 'Administrador Geral',
+          role: 'Administrador Geral',
           createdAt: new Date().toISOString(),
         };
 

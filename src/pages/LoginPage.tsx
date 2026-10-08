@@ -26,10 +26,13 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      await signIn({
-        email: email.trim() || 'gestor@rnprecificacao.com.br',
-        password: password || '123456',
+      const result = await signIn({
+        email: email.trim() || 'adm@rnprecificacao.com.br',
+        password: password || 'adm12345',
       });
+      if (!result.success && result.error) {
+        setErrors({ general: result.error });
+      }
     } catch (err: any) {
       setErrors({
         general: err?.message || 'Falha ao processar login. Tente novamente mais tarde.',

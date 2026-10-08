@@ -16,6 +16,7 @@ import { Alert } from '../ui/Alert';
 import type { Orcamento } from '../../types/orcamento';
 import { OrcamentoFormView } from './OrcamentoFormView';
 import { formatCurrencyBRL } from '../../utils/pricingEngine';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 const STORAGE_KEY = 'rn_precificacao_orcamentos_data_v2';
 
@@ -138,6 +139,41 @@ export const OrcamentosView: React.FC = () => {
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    const client = supabase;
+    if (!isSupabaseConfigured() || !client) return;
+
+    const loadOrcamentos = async () => {
+      try {
+        const { data, error } = await client
+          .from('orcamentos')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const mapped: Orcamento[] = data.map((row: any) => ({
+            id: row.id,
+            osNumber: row.os_number,
+            clientName: row.client_name,
+            date: row.date,
+            responsavel: row.responsavel,
+            status: row.status || 'Pendente',
+            parametros: row.parametros,
+            itens: Array.isArray(row.itens) ? row.itens : [],
+            totalValue: Number(row.total_value) || 0,
+            custoTotal: Number(row.custo_total) || 0,
+            base: Number(row.base) || 0,
+          }));
+          setOrcamentos(mapped);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar orçamentos do Supabase:', err);
+      }
+    };
+
+    loadOrcamentos();
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orcamentos));
   }, [orcamentos]);
 
@@ -160,6 +196,28 @@ export const OrcamentosView: React.FC = () => {
       return [savedOrc, ...prev];
     });
 
+    if (isSupabaseConfigured() && supabase) {
+      supabase
+        .from('orcamentos')
+        .upsert({
+          id: savedOrc.id,
+          os_number: savedOrc.osNumber,
+          client_name: savedOrc.clientName,
+          date: savedOrc.date,
+          responsavel: savedOrc.responsavel,
+          status: savedOrc.status,
+          parametros: savedOrc.parametros,
+          itens: savedOrc.itens,
+          total_value: savedOrc.totalValue,
+          custo_total: savedOrc.custoTotal || 0,
+          base: savedOrc.base || 0,
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error('Erro ao salvar orçamento no Supabase:', error.message);
+        });
+    }
+
     setViewMode('list');
     setSelectedOrcamento(null);
     setFeedbackMessage(
@@ -170,8 +228,20 @@ export const OrcamentosView: React.FC = () => {
 
   const handleDelete = () => {
     if (!deletingOrcamento) return;
-    setOrcamentos((prev) => prev.filter((item) => item.id !== deletingOrcamento.id));
+    const idToDelete = deletingOrcamento.id;
+    setOrcamentos((prev) => prev.filter((item) => item.id !== idToDelete));
     setDeletingOrcamento(null);
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase
+        .from('orcamentos')
+        .delete()
+        .eq('id', idToDelete)
+        .then(({ error }) => {
+          if (error) console.error('Erro ao excluir orçamento no Supabase:', error.message);
+        });
+    }
+
     setFeedbackMessage('Orçamento excluído com sucesso.');
     setTimeout(() => setFeedbackMessage(null), 3000);
   };

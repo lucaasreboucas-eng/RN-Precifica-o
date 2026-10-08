@@ -100,12 +100,14 @@ export const UsuariosView: React.FC = () => {
       updateUser(editingUser.id, {
         name: name.trim(),
         email: email.trim(),
+        ...(password.trim() ? { password: password.trim() } : {}),
         profileId,
       });
     } else {
       addUser({
         name: name.trim(),
         email: email.trim(),
+        password: password.trim(),
         profileId,
         status: 'ativo',
       });
