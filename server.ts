@@ -625,7 +625,7 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     res.json({ orcamentos: store.orcamentos });
   });
 
-  app.put('/api/store/default-params', (req, res) => {
+  const handleUpdateDefaultParams = (req: express.Request, res: express.Response) => {
     const store = readStore();
     if (req.body?.defaultParams && typeof req.body.defaultParams === 'object') {
       store.defaultParams = {
@@ -635,7 +635,10 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
       writeStore(store);
     }
     res.json({ defaultParams: store.defaultParams });
-  });
+  };
+
+  app.put('/api/store/default-params', handleUpdateDefaultParams);
+  app.post('/api/store/default-params', handleUpdateDefaultParams);
 
   app.post('/api/store/login', (req, res) => {
     const { email, password } = req.body || {};

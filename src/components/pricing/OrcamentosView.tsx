@@ -79,6 +79,14 @@ export const OrcamentosView: React.FC = () => {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
               localQuotes = merged;
             }
+            if (storeData.defaultParams && typeof storeData.defaultParams === 'object') {
+              try {
+                localStorage.setItem(
+                  'rn_precificacao_default_params_v1',
+                  JSON.stringify(storeData.defaultParams)
+                );
+              } catch {}
+            }
           }
         } catch (serverErr) {
           console.warn('Aviso ao sincronizar orçamentos com o servidor:', serverErr);
@@ -137,20 +145,30 @@ export const OrcamentosView: React.FC = () => {
       fetch('/api/store')
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (data && Array.isArray(data.orcamentos) && isMounted) {
-            setOrcamentos((prev) => {
-              const prevJson = JSON.stringify(prev);
-              const newJson = JSON.stringify(data.orcamentos);
-              if (prevJson !== newJson) {
-                // If local had unsaved items, keep them
-                const serverIds = new Set(data.orcamentos.map((o: any) => o.id));
-                const localOnly = prev.filter((p) => !serverIds.has(p.id));
-                const combined = [...data.orcamentos, ...localOnly];
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
-                return combined;
-              }
-              return prev;
-            });
+          if (data && isMounted) {
+            if (data.defaultParams && typeof data.defaultParams === 'object') {
+              try {
+                localStorage.setItem(
+                  'rn_precificacao_default_params_v1',
+                  JSON.stringify(data.defaultParams)
+                );
+              } catch {}
+            }
+            if (Array.isArray(data.orcamentos)) {
+              setOrcamentos((prev) => {
+                const prevJson = JSON.stringify(prev);
+                const newJson = JSON.stringify(data.orcamentos);
+                if (prevJson !== newJson) {
+                  // If local had unsaved items, keep them
+                  const serverIds = new Set(data.orcamentos.map((o: any) => o.id));
+                  const localOnly = prev.filter((p) => !serverIds.has(p.id));
+                  const combined = [...data.orcamentos, ...localOnly];
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+                  return combined;
+                }
+                return prev;
+              });
+            }
           }
         })
         .catch(() => {});

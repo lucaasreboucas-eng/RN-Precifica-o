@@ -2,7 +2,7 @@ import { getGlobalStore, saveGlobalStore } from './_store.js';
 
 export default function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -15,7 +15,7 @@ export default function handler(req: any, res: any) {
     return res.status(200).json({ defaultParams: store.defaultParams });
   }
 
-  if (req.method === 'PUT') {
+  if (req.method === 'PUT' || req.method === 'POST') {
     if (req.body?.defaultParams && typeof req.body.defaultParams === 'object') {
       store.defaultParams = {
         ...store.defaultParams,

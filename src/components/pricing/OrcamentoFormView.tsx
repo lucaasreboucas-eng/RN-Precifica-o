@@ -235,40 +235,46 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             // ignore
           }
           if (!initialOrcamento) {
-            setParams(validDefaults);
-            setParamInputs({
-              margemLucroPercent: String(validDefaults.margemLucroPercent),
-              impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
-              taxaAdministrativaPercent: String(validDefaults.taxaAdministrativaPercent),
-              comissaoVendedorPercent: String(validDefaults.comissaoVendedorPercent),
-              issPercent: String(validDefaults.issPercent),
-              antecipacaoPercent: String(validDefaults.antecipacaoPercent),
-            });
-            setPreviousParamValues({
-              margemLucroPercent: {
-                num: validDefaults.margemLucroPercent,
-                text: String(validDefaults.margemLucroPercent),
-              },
-              impostoFaturamentoPercent: {
-                num: validDefaults.impostoFaturamentoPercent,
-                text: String(validDefaults.impostoFaturamentoPercent),
-              },
-              taxaAdministrativaPercent: {
-                num: validDefaults.taxaAdministrativaPercent,
-                text: String(validDefaults.taxaAdministrativaPercent),
-              },
-              comissaoVendedorPercent: {
-                num: validDefaults.comissaoVendedorPercent,
-                text: String(validDefaults.comissaoVendedorPercent),
-              },
-              issPercent: {
-                num: validDefaults.issPercent,
-                text: String(validDefaults.issPercent),
-              },
-              antecipacaoPercent: {
-                num: validDefaults.antecipacaoPercent,
-                text: String(validDefaults.antecipacaoPercent),
-              },
+            setEditingParams((currEditing) => {
+              const isAnyEditing = Object.values(currEditing).some(Boolean);
+              if (!isAnyEditing) {
+                setParams(validDefaults);
+                setParamInputs({
+                  margemLucroPercent: String(validDefaults.margemLucroPercent),
+                  impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
+                  taxaAdministrativaPercent: String(validDefaults.taxaAdministrativaPercent),
+                  comissaoVendedorPercent: String(validDefaults.comissaoVendedorPercent),
+                  issPercent: String(validDefaults.issPercent),
+                  antecipacaoPercent: String(validDefaults.antecipacaoPercent),
+                });
+                setPreviousParamValues({
+                  margemLucroPercent: {
+                    num: validDefaults.margemLucroPercent,
+                    text: String(validDefaults.margemLucroPercent),
+                  },
+                  impostoFaturamentoPercent: {
+                    num: validDefaults.impostoFaturamentoPercent,
+                    text: String(validDefaults.impostoFaturamentoPercent),
+                  },
+                  taxaAdministrativaPercent: {
+                    num: validDefaults.taxaAdministrativaPercent,
+                    text: String(validDefaults.taxaAdministrativaPercent),
+                  },
+                  comissaoVendedorPercent: {
+                    num: validDefaults.comissaoVendedorPercent,
+                    text: String(validDefaults.comissaoVendedorPercent),
+                  },
+                  issPercent: {
+                    num: validDefaults.issPercent,
+                    text: String(validDefaults.issPercent),
+                  },
+                  antecipacaoPercent: {
+                    num: validDefaults.antecipacaoPercent,
+                    text: String(validDefaults.antecipacaoPercent),
+                  },
+                });
+              }
+              return currEditing;
             });
           }
         }
@@ -672,8 +678,8 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     setParamSectionFeedback(null);
   };
 
-  const handleSaveParamAsDefault = (field: ParamKey) => {
-    const raw = paramInputs[field]?.trim() ?? '';
+  const handleSaveParamAsDefault = async (field: ParamKey) => {
+    const raw = (paramInputs[field] !== undefined && paramInputs[field] !== '' ? paramInputs[field] : String(params[field]))?.trim() ?? '';
     const num = parseFloat(raw.replace(',', '.'));
 
     if (raw === '' || isNaN(num) || num < 0) {
@@ -690,7 +696,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     }
 
     const formattedText = String(num);
+    const currentSaved = loadSavedDefaultParams();
     const updatedDefaults: PricingParameters = {
+      ...currentSaved,
       ...defaultParams,
       [field]: num,
     };
@@ -703,12 +711,6 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     } catch {
       // Ignore storage errors
     }
-
-    fetch('/api/store/default-params', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ defaultParams: updatedDefaults }),
-    }).catch(() => {});
 
     setDefaultParams(updatedDefaults);
     setParams((prev) => ({
@@ -732,11 +734,85 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       [field]: false,
     }));
 
+    try {
+      await fetch('/api/store/default-params', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
+      await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
+    } catch (err) {
+      console.warn('Aviso ao sincronizar parâmetros padrão no servidor:', err);
+    }
+
     const fieldLabel =
       PARAM_FIELDS.find((f) => f.key === field)?.label || 'Parâmetro';
     setParamSectionFeedback({
       type: 'success',
-      message: `${fieldLabel} salvo para este orçamento e atualizado como novo valor padrão (${num}%) para os próximos orçamentos.`,
+      message: `✓ ${fieldLabel} salvo para este orçamento e definido como novo valor padrão (${num}%) para os próximos orçamentos!`,
+    });
+  };
+
+  const handleSaveAllParamsAsDefault = async () => {
+    const updatedDefaults: PricingParameters = { ...defaultParams };
+    const missingLabels: string[] = [];
+
+    for (const fieldMeta of PARAM_FIELDS) {
+      const raw = (paramInputs[fieldMeta.key] !== undefined && paramInputs[fieldMeta.key] !== '' ? paramInputs[fieldMeta.key] : String(params[fieldMeta.key]))?.trim() ?? '';
+      const num = parseFloat(raw.replace(',', '.'));
+      if (raw === '' || isNaN(num) || num < 0) {
+        missingLabels.push(fieldMeta.label);
+      } else {
+        updatedDefaults[fieldMeta.key] = num;
+      }
+    }
+
+    if (missingLabels.length > 0) {
+      setParamSectionFeedback({
+        type: 'error',
+        message: `Preencha corretamente os parâmetros (${missingLabels.join(', ')}) antes de salvar como padrão.`,
+      });
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        DEFAULT_PARAMS_STORAGE_KEY,
+        JSON.stringify(updatedDefaults)
+      );
+    } catch {}
+
+    setDefaultParams(updatedDefaults);
+    setParams(updatedDefaults);
+    setEditingParams({
+      margemLucroPercent: false,
+      impostoFaturamentoPercent: false,
+      taxaAdministrativaPercent: false,
+      comissaoVendedorPercent: false,
+      issPercent: false,
+      antecipacaoPercent: false,
+    });
+
+    try {
+      await fetch('/api/store/default-params', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
+      await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
+    } catch {}
+
+    setParamSectionFeedback({
+      type: 'success',
+      message: '✓ Todos os parâmetros foram salvos com sucesso como novos valores padrão para os próximos orçamentos!',
     });
   };
 
@@ -958,9 +1034,20 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                 2. Parâmetros do Orçamento
               </CardTitle>
             </div>
-            <span className="text-xs text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-              Alíquotas e Margens Percentuais (%) • Preenchimento Obrigatório
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                Alíquotas e Margens Percentuais (%) • Preenchimento Obrigatório
+              </span>
+              <button
+                type="button"
+                onClick={handleSaveAllParamsAsDefault}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2.5 py-1 rounded-lg transition-colors shadow-xs"
+                title="Salvar todos os parâmetros atuais como padrão para os próximos orçamentos"
+              >
+                <BookmarkCheck className="w-3.5 h-3.5 text-amber-700" />
+                Salvar todos como padrão
+              </button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-5 space-y-4">
@@ -1081,7 +1168,7 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                         className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-950 bg-amber-100/80 hover:bg-amber-200/80 px-2 py-1 rounded-md transition-colors"
                         title="Salvar este valor também como padrão para os próximos orçamentos"
                       >
-                        <BookmarkCheck className="w-3.5 h-3.5" />
+                        <BookmarkCheck className="w-3.5 h-3.5 text-amber-700" />
                         Salvar como padrão
                       </button>
                     </div>
@@ -1094,13 +1181,26 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                     </p>
                   )}
 
-                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-1.5">
                     <p className="text-[11px] text-slate-500">
                       {fieldMeta.description}
                     </p>
-                    <span className="text-[10px] font-mono text-slate-500 shrink-0 bg-slate-200/70 px-1.5 py-0.5 rounded">
-                      Padrão: {defaultVal}%
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded">
+                        Padrão: {defaultVal}%
+                      </span>
+                      {!isEditing && Number(currentInputVal) !== defaultVal && (
+                        <button
+                          type="button"
+                          onClick={() => handleSaveParamAsDefault(fieldMeta.key)}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 hover:text-amber-950 bg-amber-100/90 hover:bg-amber-200 px-1.5 py-0.5 rounded transition-colors"
+                          title="Salvar este valor como novo padrão para os próximos orçamentos"
+                        >
+                          <BookmarkCheck className="w-3 h-3 text-amber-700" />
+                          Salvar como padrão
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
