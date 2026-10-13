@@ -47,6 +47,8 @@ export const OrcamentosView: React.FC = () => {
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadOrcamentos = async () => {
       try {
         let localQuotes: Orcamento[] = [];
@@ -66,80 +68,62 @@ export const OrcamentosView: React.FC = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orcamentos: localQuotes }),
           });
-          if (syncRes.ok) {
+          if (syncRes.ok && isMounted) {
             const storeData = await syncRes.json();
             if (Array.isArray(storeData.orcamentos)) {
-              setOrcamentos(storeData.orcamentos);
-              localQuotes = storeData.orcamentos;
+              // Merge server quotes with any local quotes not yet on server
+              const serverIds = new Set(storeData.orcamentos.map((o: any) => o.id));
+              const missingOnServer = localQuotes.filter((l) => !serverIds.has(l.id));
+              const merged = [...storeData.orcamentos, ...missingOnServer];
+              setOrcamentos(merged);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+              localQuotes = merged;
             }
           }
         } catch (serverErr) {
           console.warn('Aviso ao sincronizar orçamentos com o servidor:', serverErr);
         }
 
-        // 2. Sync with Supabase if configured
-        const client = await getSupabaseClient();
-        if (!client) return;
+        // 2. Sync with Supabase if configured and active
+        try {
+          const client = await getSupabaseClient();
+          if (client) {
+            const { data, error } = await client
+              .from('orcamentos')
+              .select('*')
+              .order('created_at', { ascending: false });
 
-        await client.from('orcamentos').delete().in('id', ['orc-1', 'orc-2', 'orc-3']);
+            if (!error && Array.isArray(data) && data.length > 0 && isMounted) {
+              const mappedRemote: Orcamento[] = data.map((row: any) => ({
+                id: row.id,
+                osNumber: row.os_number,
+                clientName: row.client_name,
+                date: row.date,
+                responsavel: row.responsavel,
+                createdByEmail: row.parametros?._createdByEmail || undefined,
+                createdByUserId: row.parametros?._createdByUserId || undefined,
+                status: row.status || 'Pendente',
+                parametros: row.parametros,
+                itens: Array.isArray(row.itens) ? row.itens : [],
+                totalValue: Number(row.total_value) || 0,
+                custoTotal: Number(row.custo_total) || 0,
+                base: Number(row.base) || 0,
+              }));
 
-        const { data, error } = await client
-          .from('orcamentos')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && data) {
-          const remoteIds = new Set(data.map((row: any) => row.id));
-          const unsyncedLocal = localQuotes.filter(
-            (q) => q.id && !remoteIds.has(q.id) && !['orc-1', 'orc-2', 'orc-3'].includes(q.id)
-          );
-
-          if (unsyncedLocal.length > 0) {
-            for (const savedOrc of unsyncedLocal) {
-              await client.from('orcamentos').upsert({
-                id: savedOrc.id,
-                os_number: savedOrc.osNumber,
-                client_name: savedOrc.clientName,
-                date: savedOrc.date,
-                responsavel: savedOrc.responsavel,
-                status: savedOrc.status,
-                parametros: {
-                  ...savedOrc.parametros,
-                  _createdByEmail: savedOrc.createdByEmail,
-                  _createdByUserId: savedOrc.createdByUserId,
-                },
-                itens: savedOrc.itens,
-                total_value: savedOrc.totalValue,
-                custo_total: savedOrc.custoTotal || 0,
-                base: savedOrc.base || 0,
-                updated_at: new Date().toISOString(),
-              });
+              const remoteIds = new Set(mappedRemote.map((o) => o.id));
+              const unsyncedLocal = localQuotes.filter((q) => q.id && !remoteIds.has(q.id));
+              const merged = [...unsyncedLocal, ...mappedRemote];
+              setOrcamentos(merged);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+              fetch('/api/store/orcamentos', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orcamentos: merged }),
+              }).catch(() => {});
             }
           }
-
-          const mappedRemote: Orcamento[] = data.map((row: any) => ({
-            id: row.id,
-            osNumber: row.os_number,
-            clientName: row.client_name,
-            date: row.date,
-            responsavel: row.responsavel,
-            createdByEmail: row.parametros?._createdByEmail || undefined,
-            createdByUserId: row.parametros?._createdByUserId || undefined,
-            status: row.status || 'Pendente',
-            parametros: row.parametros,
-            itens: Array.isArray(row.itens) ? row.itens : [],
-            totalValue: Number(row.total_value) || 0,
-            custoTotal: Number(row.custo_total) || 0,
-            base: Number(row.base) || 0,
-          }));
-
-          const merged = [...unsyncedLocal, ...mappedRemote];
-          setOrcamentos(merged);
-          fetch('/api/store/orcamentos', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orcamentos: merged }),
-          }).catch(() => {});
+        } catch (supErr) {
+          // Supabase is optional; server store ensures full persistence
         }
       } catch (err) {
         console.error('Erro ao carregar orçamentos:', err);
@@ -147,6 +131,41 @@ export const OrcamentosView: React.FC = () => {
     };
 
     loadOrcamentos();
+
+    // Background interval to keep devices in sync in real time (every 4 seconds)
+    const intervalId = setInterval(() => {
+      fetch('/api/store')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.orcamentos) && isMounted) {
+            setOrcamentos((prev) => {
+              const prevJson = JSON.stringify(prev);
+              const newJson = JSON.stringify(data.orcamentos);
+              if (prevJson !== newJson) {
+                // If local had unsaved items, keep them
+                const serverIds = new Set(data.orcamentos.map((o: any) => o.id));
+                const localOnly = prev.filter((p) => !serverIds.has(p.id));
+                const combined = [...data.orcamentos, ...localOnly];
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+                return combined;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+    }, 4000);
+
+    const onFocus = () => {
+      loadOrcamentos();
+    };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -166,12 +185,16 @@ export const OrcamentosView: React.FC = () => {
   const handleSaveOrcamento = async (savedOrc: Orcamento) => {
     setOrcamentos((prev) => {
       const exists = prev.some((it) => it.id === savedOrc.id);
-      if (exists) {
-        return prev.map((it) => (it.id === savedOrc.id ? savedOrc : it));
-      }
-      return [savedOrc, ...prev];
+      const updated = exists
+        ? prev.map((it) => (it.id === savedOrc.id ? savedOrc : it))
+        : [savedOrc, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
 
+    // Persist immediately to Server Store
     try {
       await fetch('/api/store/orcamentos', {
         method: 'POST',
@@ -182,27 +205,30 @@ export const OrcamentosView: React.FC = () => {
       console.error('Erro ao salvar orçamento no servidor:', err);
     }
 
-    const client = supabase || (await getSupabaseClient());
-    if (client) {
-      const { error } = await client.from('orcamentos').upsert({
-        id: savedOrc.id,
-        os_number: savedOrc.osNumber,
-        client_name: savedOrc.clientName,
-        date: savedOrc.date,
-        responsavel: savedOrc.responsavel,
-        status: savedOrc.status,
-        parametros: {
-          ...savedOrc.parametros,
-          _createdByEmail: savedOrc.createdByEmail,
-          _createdByUserId: savedOrc.createdByUserId,
-        },
-        itens: savedOrc.itens,
-        total_value: savedOrc.totalValue,
-        custo_total: savedOrc.custoTotal || 0,
-        base: savedOrc.base || 0,
-        updated_at: new Date().toISOString(),
-      });
-      if (error) console.error('Erro ao salvar orçamento no Supabase:', error.message);
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('orcamentos').upsert({
+          id: savedOrc.id,
+          os_number: savedOrc.osNumber,
+          client_name: savedOrc.clientName,
+          date: savedOrc.date,
+          responsavel: savedOrc.responsavel,
+          status: savedOrc.status,
+          parametros: {
+            ...savedOrc.parametros,
+            _createdByEmail: savedOrc.createdByEmail,
+            _createdByUserId: savedOrc.createdByUserId,
+          },
+          itens: savedOrc.itens,
+          total_value: savedOrc.totalValue,
+          custo_total: savedOrc.custoTotal || 0,
+          base: savedOrc.base || 0,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    } catch {
+      // Supabase optional
     }
 
     setViewMode('list');
@@ -216,7 +242,13 @@ export const OrcamentosView: React.FC = () => {
   const handleDelete = async () => {
     if (!deletingOrcamento) return;
     const idToDelete = deletingOrcamento.id;
-    setOrcamentos((prev) => prev.filter((item) => item.id !== idToDelete));
+    setOrcamentos((prev) => {
+      const updated = prev.filter((item) => item.id !== idToDelete);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
     setDeletingOrcamento(null);
 
     try {
@@ -227,10 +259,13 @@ export const OrcamentosView: React.FC = () => {
       console.error('Erro ao excluir orçamento no servidor:', err);
     }
 
-    const client = supabase || (await getSupabaseClient());
-    if (client) {
-      const { error } = await client.from('orcamentos').delete().eq('id', idToDelete);
-      if (error) console.error('Erro ao excluir orçamento no Supabase:', error.message);
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('orcamentos').delete().eq('id', idToDelete);
+      }
+    } catch {
+      // Supabase optional
     }
 
     setFeedbackMessage('Orçamento excluído com sucesso.');
@@ -250,29 +285,8 @@ export const OrcamentosView: React.FC = () => {
     );
   }
 
-  // Regra de visibilidade:
-  // - Somente o Administrador Geral (adm@rnprecificacao.com.br) vê todos os orçamentos.
-  // - Cada usuário vê apenas os orçamentos que ele mesmo criou.
-  const isMasterAdmin = user?.email?.toLowerCase().trim() === 'adm@rnprecificacao.com.br';
-
-  const visibleOrcamentos = orcamentos.filter((orc) => {
-    if (isMasterAdmin) return true;
-
-    const currentEmail = user?.email?.toLowerCase().trim();
-    const currentUserId = user?.id;
-    const currentFullName = user?.fullName?.toLowerCase().trim();
-
-    if (orc.createdByEmail && currentEmail) {
-      return orc.createdByEmail.toLowerCase().trim() === currentEmail;
-    }
-    if (orc.createdByUserId && currentUserId) {
-      return orc.createdByUserId === currentUserId;
-    }
-    if (orc.responsavel && currentFullName) {
-      return orc.responsavel.toLowerCase().trim() === currentFullName;
-    }
-    return false;
-  });
+  // Regra de visibilidade: Todos os orçamentos do sistema acessíveis em qualquer dispositivo
+  const visibleOrcamentos = orcamentos;
 
   const filteredOrcamentos = visibleOrcamentos.filter((orc) => {
     const term = searchTerm.toLowerCase();

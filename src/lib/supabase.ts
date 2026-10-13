@@ -17,21 +17,31 @@ let supabaseAnonKey = (
   ''
 ).trim();
 
-// Check if credentials are valid and not placeholders
+// Check if credentials are valid and not placeholders or dead hosts
 export const isSupabaseConfigured = (): boolean => {
   if (!supabaseUrl || !supabaseAnonKey) return false;
-  if (supabaseUrl.includes('your-project-id') || supabaseAnonKey.includes('...')) return false;
+  if (
+    supabaseUrl.includes('your-project-id') ||
+    supabaseUrl.includes('aojysjfwipdqwhxyqifx') ||
+    supabaseAnonKey.includes('...')
+  ) {
+    return false;
+  }
   try {
     const url = new URL(supabaseUrl);
-    return url.protocol === 'https:' || url.protocol === 'http:';
+    return (url.protocol === 'https:' || url.protocol === 'http:') && Boolean(url.hostname);
   } catch {
     return false;
   }
 };
 
+const getCleanSupabaseUrl = (raw: string) => {
+  return raw.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '').trim();
+};
+
 // Initialize the client conditionally to prevent runtime exceptions when env vars are pending
 export let supabase: SupabaseClient | null = isSupabaseConfigured()
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(getCleanSupabaseUrl(supabaseUrl), supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -50,7 +60,7 @@ export const getSupabaseClient = async (): Promise<SupabaseClient | null> => {
         supabaseUrl = String(data.supabaseUrl).trim();
         supabaseAnonKey = String(data.supabaseAnonKey).trim();
         if (isSupabaseConfigured()) {
-          supabase = createClient(supabaseUrl, supabaseAnonKey, {
+          supabase = createClient(getCleanSupabaseUrl(supabaseUrl), supabaseAnonKey, {
             auth: {
               persistSession: true,
               autoRefreshToken: true,

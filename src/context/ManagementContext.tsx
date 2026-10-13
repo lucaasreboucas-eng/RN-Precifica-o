@@ -154,11 +154,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         // 2. Sync with Supabase if configured
         const client = await getSupabaseClient();
-        if (!client) return;
-
-        // Remove legacy test users and test profile if they exist in Supabase
-        await client.from('managed_users').delete().in('id', ['user-1', 'user-2']);
-        await client.from('profiles').delete().eq('id', 'perfil-orcamentista');
+        if (client) {
+          // Remove legacy test users and test profile if they exist in Supabase
+          await client.from('managed_users').delete().in('id', ['user-1', 'user-2']);
+          await client.from('profiles').delete().eq('id', 'perfil-orcamentista');
 
         // Ensure default admin profile and adm@rnprecificacao.com.br exist in Supabase
         await client.from('profiles').upsert(
@@ -272,9 +271,10 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             body: JSON.stringify({ users: mergedUsers }),
           }).catch(() => {});
         }
-      } catch (err) {
-        console.error('Erro ao sincronizar perfis e usuários:', err);
       }
+    } catch (err) {
+      console.error('Erro ao sincronizar perfis e usuários:', err);
+    }
     };
 
     loadRemoteData();
@@ -552,7 +552,7 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setUsers((prev) => {
       const next = prev.map((item) => {
         if (item.id !== id) return item;
-        const nextStatus = item.status === 'ativo' ? 'bloqueado' : 'ativo';
+        const nextStatus: 'ativo' | 'bloqueado' = item.status === 'ativo' ? 'bloqueado' : 'ativo';
 
         getSupabaseClient().then((client) => {
           if (client) {

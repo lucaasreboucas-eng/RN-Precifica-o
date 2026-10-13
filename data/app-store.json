@@ -1,0 +1,36 @@
+{
+  "profiles": [
+    {
+      "id": "perfil-admin",
+      "name": "Administrador Geral",
+      "description": "Acesso total a todas as abas e sub-abas.",
+      "permissions": [
+        "gestao-precos-orcamentos",
+        "configuracoes-perfis",
+        "configuracoes-usuarios"
+      ],
+      "isSystem": true,
+      "createdAt": "2026-10-08T18:35:36.093Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "user-adm",
+      "name": "Administrador Geral",
+      "email": "adm@rnprecificacao.com.br",
+      "password": "adm12345",
+      "profileId": "perfil-admin",
+      "status": "ativo",
+      "createdAt": "2026-10-08T18:35:36.093Z"
+    }
+  ],
+  "orcamentos": [],
+  "defaultParams": {
+    "margemLucroPercent": 30,
+    "impostoFaturamentoPercent": 6,
+    "taxaAdministrativaPercent": 5,
+    "comissaoVendedorPercent": 3,
+    "issPercent": 2,
+    "antecipacaoPercent": 1.5
+  }
+}

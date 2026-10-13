@@ -10,7 +10,8 @@ import { extractText } from 'unpdf';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_FILE_PATH = path.join(__dirname, 'data', 'app-store.json');
+const DATA_FILE_PATH = path.resolve(process.cwd(), 'data', 'app-store.json');
+const BACKUP_FILE_PATH = '/tmp/rn-app-store.json';
 
 interface ServerStoreData {
   profiles: any[];
@@ -63,63 +64,105 @@ const DEFAULT_STORE_DATA: ServerStoreData = {
   },
 };
 
+let serverStoreCache: ServerStoreData | null = null;
+
+function sanitizeStoreData(parsed: any): ServerStoreData {
+  const profiles = Array.isArray(parsed?.profiles) && parsed.profiles.length > 0
+    ? parsed.profiles
+    : DEFAULT_STORE_DATA.profiles;
+  const users = Array.isArray(parsed?.users) && parsed.users.length > 0
+    ? parsed.users
+    : DEFAULT_STORE_DATA.users;
+
+  const hasAdminUser = users.some(
+    (u: any) => String(u.email || '').toLowerCase() === 'adm@rnprecificacao.com.br'
+  );
+  if (!hasAdminUser) {
+    users.unshift(DEFAULT_STORE_DATA.users[0]);
+  }
+  const hasAdminProfile = profiles.some((p: any) => p.id === 'perfil-admin');
+  if (!hasAdminProfile) {
+    profiles.unshift(DEFAULT_STORE_DATA.profiles[0]);
+  }
+
+  return {
+    profiles,
+    users,
+    orcamentos: Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [],
+    defaultParams:
+      parsed?.defaultParams && typeof parsed.defaultParams === 'object'
+        ? { ...DEFAULT_STORE_DATA.defaultParams, ...parsed.defaultParams }
+        : { ...DEFAULT_STORE_DATA.defaultParams },
+  };
+}
+
 function readStore(): ServerStoreData {
+  if (serverStoreCache) {
+    return serverStoreCache;
+  }
+
+  // 1. Try reading from main data path
   try {
     if (fs.existsSync(DATA_FILE_PATH)) {
       const raw = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
-      const profiles = Array.isArray(parsed.profiles) && parsed.profiles.length > 0
-        ? parsed.profiles
-        : DEFAULT_STORE_DATA.profiles;
-      const users = Array.isArray(parsed.users) && parsed.users.length > 0
-        ? parsed.users
-        : DEFAULT_STORE_DATA.users;
-      const hasAdminUser = users.some(
-        (u: any) => String(u.email || '').toLowerCase() === 'adm@rnprecificacao.com.br'
-      );
-      if (!hasAdminUser) {
-        users.unshift(DEFAULT_STORE_DATA.users[0]);
-      }
-      const hasAdminProfile = profiles.some((p: any) => p.id === 'perfil-admin');
-      if (!hasAdminProfile) {
-        profiles.unshift(DEFAULT_STORE_DATA.profiles[0]);
-      }
-      return {
-        profiles,
-        users,
-        orcamentos: Array.isArray(parsed.orcamentos) ? parsed.orcamentos : [],
-        defaultParams:
-          parsed.defaultParams && typeof parsed.defaultParams === 'object'
-            ? { ...DEFAULT_STORE_DATA.defaultParams, ...parsed.defaultParams }
-            : { ...DEFAULT_STORE_DATA.defaultParams },
-      };
+      serverStoreCache = sanitizeStoreData(parsed);
+      return serverStoreCache;
     }
   } catch (err) {
-    console.error('Erro ao ler banco de dados local:', err);
+    console.error('Erro ao ler banco de dados principal:', err);
   }
-  return JSON.parse(JSON.stringify(DEFAULT_STORE_DATA));
+
+  // 2. Try reading from backup path in /tmp
+  try {
+    if (fs.existsSync(BACKUP_FILE_PATH)) {
+      const raw = fs.readFileSync(BACKUP_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      serverStoreCache = sanitizeStoreData(parsed);
+      return serverStoreCache;
+    }
+  } catch (err) {
+    console.error('Erro ao ler banco de dados de backup:', err);
+  }
+
+  const fallback = JSON.parse(JSON.stringify(DEFAULT_STORE_DATA));
+  serverStoreCache = fallback;
+  return fallback;
 }
 
 function writeStore(data: ServerStoreData): void {
+  serverStoreCache = data;
+  const jsonContent = JSON.stringify(data, null, 2);
+
+  // Write to main data path
   try {
     const dir = path.dirname(DATA_FILE_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(DATA_FILE_PATH, jsonContent, 'utf-8');
   } catch (err) {
-    console.error('Erro ao salvar banco de dados local:', err);
+    console.error('Erro ao salvar no arquivo principal:', err);
+  }
+
+  // Also write to backup in /tmp
+  try {
+    fs.writeFileSync(BACKUP_FILE_PATH, jsonContent, 'utf-8');
+  } catch (err) {
+    console.error('Erro ao salvar no arquivo de backup:', err);
   }
 }
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+function getAiClient() {
+  return new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY || 'dummy-key',
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
     },
-  },
-});
+  });
+}
 
 const FALLBACK_MODELS = [
   'gemini-flash-latest',
@@ -257,6 +300,7 @@ function fallbackParseText(
 
 async function generateWithFallback(parts: any[]) {
   let lastError: any = null;
+  const ai = getAiClient();
 
   for (const modelName of FALLBACK_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -324,7 +368,22 @@ async function generateWithFallback(parts: any[]) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+  // CORS middleware for seamless cross-device, cross-origin access
+  app.use((_req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    );
+    if (_req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+    next();
+  });
 
   app.use(express.json({ limit: '50mb' }));
 
@@ -619,7 +678,7 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
