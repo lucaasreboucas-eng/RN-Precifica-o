@@ -637,6 +637,10 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     res.json({ defaultParams: store.defaultParams });
   };
 
+  app.get('/api/store/default-params', (_req, res) => {
+    const store = readStore();
+    res.json({ defaultParams: store.defaultParams });
+  });
   app.put('/api/store/default-params', handleUpdateDefaultParams);
   app.post('/api/store/default-params', handleUpdateDefaultParams);
 

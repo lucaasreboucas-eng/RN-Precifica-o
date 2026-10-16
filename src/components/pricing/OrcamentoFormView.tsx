@@ -202,31 +202,32 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
         const data = await res.json();
         const remoteDefaults = data?.defaultParams;
         if (remoteDefaults && typeof remoteDefaults === 'object' && isMounted) {
+          const currentLocal = loadSavedDefaultParams();
           const validDefaults: PricingParameters = {
             margemLucroPercent:
               typeof remoteDefaults.margemLucroPercent === 'number'
                 ? remoteDefaults.margemLucroPercent
-                : FALLBACK_DEFAULT_PARAMS.margemLucroPercent,
+                : currentLocal.margemLucroPercent,
             impostoFaturamentoPercent:
               typeof remoteDefaults.impostoFaturamentoPercent === 'number'
                 ? remoteDefaults.impostoFaturamentoPercent
-                : FALLBACK_DEFAULT_PARAMS.impostoFaturamentoPercent,
+                : currentLocal.impostoFaturamentoPercent,
             taxaAdministrativaPercent:
               typeof remoteDefaults.taxaAdministrativaPercent === 'number'
                 ? remoteDefaults.taxaAdministrativaPercent
-                : FALLBACK_DEFAULT_PARAMS.taxaAdministrativaPercent,
+                : currentLocal.taxaAdministrativaPercent,
             comissaoVendedorPercent:
               typeof remoteDefaults.comissaoVendedorPercent === 'number'
                 ? remoteDefaults.comissaoVendedorPercent
-                : FALLBACK_DEFAULT_PARAMS.comissaoVendedorPercent,
+                : currentLocal.comissaoVendedorPercent,
             issPercent:
               typeof remoteDefaults.issPercent === 'number'
                 ? remoteDefaults.issPercent
-                : FALLBACK_DEFAULT_PARAMS.issPercent,
+                : currentLocal.issPercent,
             antecipacaoPercent:
               typeof remoteDefaults.antecipacaoPercent === 'number'
                 ? remoteDefaults.antecipacaoPercent
-                : FALLBACK_DEFAULT_PARAMS.antecipacaoPercent,
+                : currentLocal.antecipacaoPercent,
           };
           setDefaultParams(validDefaults);
           try {
@@ -698,8 +699,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     const formattedText = String(num);
     const currentSaved = loadSavedDefaultParams();
     const updatedDefaults: PricingParameters = {
-      ...currentSaved,
+      ...FALLBACK_DEFAULT_PARAMS,
       ...defaultParams,
+      ...currentSaved,
       [field]: num,
     };
 
@@ -758,7 +760,12 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
   };
 
   const handleSaveAllParamsAsDefault = async () => {
-    const updatedDefaults: PricingParameters = { ...defaultParams };
+    const currentSaved = loadSavedDefaultParams();
+    const updatedDefaults: PricingParameters = {
+      ...FALLBACK_DEFAULT_PARAMS,
+      ...defaultParams,
+      ...currentSaved,
+    };
     const missingLabels: string[] = [];
 
     for (const fieldMeta of PARAM_FIELDS) {
@@ -788,6 +795,40 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
 
     setDefaultParams(updatedDefaults);
     setParams(updatedDefaults);
+    setParamInputs({
+      margemLucroPercent: String(updatedDefaults.margemLucroPercent),
+      impostoFaturamentoPercent: String(updatedDefaults.impostoFaturamentoPercent),
+      taxaAdministrativaPercent: String(updatedDefaults.taxaAdministrativaPercent),
+      comissaoVendedorPercent: String(updatedDefaults.comissaoVendedorPercent),
+      issPercent: String(updatedDefaults.issPercent),
+      antecipacaoPercent: String(updatedDefaults.antecipacaoPercent),
+    });
+    setPreviousParamValues({
+      margemLucroPercent: {
+        num: updatedDefaults.margemLucroPercent,
+        text: String(updatedDefaults.margemLucroPercent),
+      },
+      impostoFaturamentoPercent: {
+        num: updatedDefaults.impostoFaturamentoPercent,
+        text: String(updatedDefaults.impostoFaturamentoPercent),
+      },
+      taxaAdministrativaPercent: {
+        num: updatedDefaults.taxaAdministrativaPercent,
+        text: String(updatedDefaults.taxaAdministrativaPercent),
+      },
+      comissaoVendedorPercent: {
+        num: updatedDefaults.comissaoVendedorPercent,
+        text: String(updatedDefaults.comissaoVendedorPercent),
+      },
+      issPercent: {
+        num: updatedDefaults.issPercent,
+        text: String(updatedDefaults.issPercent),
+      },
+      antecipacaoPercent: {
+        num: updatedDefaults.antecipacaoPercent,
+        text: String(updatedDefaults.antecipacaoPercent),
+      },
+    });
     setEditingParams({
       margemLucroPercent: false,
       impostoFaturamentoPercent: false,

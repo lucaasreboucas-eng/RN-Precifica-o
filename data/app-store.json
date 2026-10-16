@@ -26,9 +26,9 @@
   ],
   "orcamentos": [],
   "defaultParams": {
-    "margemLucroPercent": 30,
-    "impostoFaturamentoPercent": 6,
-    "taxaAdministrativaPercent": 5,
+    "margemLucroPercent": 50,
+    "impostoFaturamentoPercent": 7,
+    "taxaAdministrativaPercent": 8,
     "comissaoVendedorPercent": 3,
     "issPercent": 2,
     "antecipacaoPercent": 1.5

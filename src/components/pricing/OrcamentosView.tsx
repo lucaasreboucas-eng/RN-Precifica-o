@@ -61,12 +61,25 @@ export const OrcamentosView: React.FC = () => {
           localQuotes = [];
         }
 
+        let localDefaults: any = null;
+        try {
+          const rawParams = localStorage.getItem('rn_precificacao_default_params_v1');
+          if (rawParams) {
+            localDefaults = JSON.parse(rawParams);
+          }
+        } catch {
+          localDefaults = null;
+        }
+
         // 1. Sync with Backend Server Store (Cross-Device Persistence)
         try {
           const syncRes = await fetch('/api/store/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orcamentos: localQuotes }),
+            body: JSON.stringify({
+              orcamentos: localQuotes,
+              defaultParams: localDefaults || undefined,
+            }),
           });
           if (syncRes.ok && isMounted) {
             const storeData = await syncRes.json();
@@ -81,9 +94,13 @@ export const OrcamentosView: React.FC = () => {
             }
             if (storeData.defaultParams && typeof storeData.defaultParams === 'object') {
               try {
+                const mergedDefaults = {
+                  ...storeData.defaultParams,
+                  ...(localDefaults || {}),
+                };
                 localStorage.setItem(
                   'rn_precificacao_default_params_v1',
-                  JSON.stringify(storeData.defaultParams)
+                  JSON.stringify(mergedDefaults)
                 );
               } catch {}
             }
@@ -148,9 +165,15 @@ export const OrcamentosView: React.FC = () => {
           if (data && isMounted) {
             if (data.defaultParams && typeof data.defaultParams === 'object') {
               try {
+                const currentRaw = localStorage.getItem('rn_precificacao_default_params_v1');
+                const currentLocal = currentRaw ? JSON.parse(currentRaw) : null;
+                const merged = {
+                  ...data.defaultParams,
+                  ...(currentLocal || {}),
+                };
                 localStorage.setItem(
                   'rn_precificacao_default_params_v1',
-                  JSON.stringify(data.defaultParams)
+                  JSON.stringify(merged)
                 );
               } catch {}
             }
