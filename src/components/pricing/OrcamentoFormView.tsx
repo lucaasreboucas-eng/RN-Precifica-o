@@ -17,6 +17,7 @@ import {
   Check,
   X,
   BookmarkCheck,
+  Printer,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
@@ -32,6 +33,8 @@ import {
   calculatePricing,
   formatCurrencyBRL,
 } from '../../utils/pricingEngine';
+import { generateResumoOrcamentoPdf } from '../../utils/orcamentoPdfGenerator';
+import { OrcamentoPdfModal } from './OrcamentoPdfModal';
 
 interface OrcamentoFormViewProps {
   initialOrcamento?: Orcamento | null;
@@ -380,6 +383,27 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
 
   // Centralized calculations in real time
   const calc = calculatePricing(itens, params);
+
+  // Modal de Impressão do PDF do Resumo Final
+  const [printPdfData, setPrintPdfData] = useState<{ url: string; filename: string } | null>(null);
+
+  const handlePrintResumo = () => {
+    const currentOrc: Orcamento = {
+      id: initialOrcamento?.id || `orc-${Date.now()}`,
+      osNumber: osNumber.trim() || 'OS-NOVA',
+      clientName: clientName.trim() || 'Cliente',
+      date,
+      responsavel: (responsavel || usuarioLogado).trim(),
+      status: initialOrcamento?.status || 'Pendente',
+      parametros: params,
+      itens,
+      totalValue: calc.valorFinalVenda,
+      custoTotal: calc.custoTotal,
+      base: calc.base,
+    };
+    const result = generateResumoOrcamentoPdf(currentOrc);
+    setPrintPdfData({ url: result.url, filename: result.filename });
+  };
 
   const handleAttachCotacao = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -978,7 +1002,16 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handlePrintResumo}
+            leftIcon={<Printer className="w-4 h-4 text-amber-700" />}
+            title="Imprimir Resumo Final em PDF"
+          >
+            Imprimir Resumo
+          </Button>
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancelar
           </Button>
@@ -1651,16 +1684,27 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
 
       {/* 6. Resumo Visual Final */}
       <div className="rounded-2xl bg-white border-2 border-amber-300 p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-5 border-b border-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-amber-600" />
             <h3 className="text-base font-bold text-slate-900 uppercase tracking-wider">
               6. Resumo Final do Orçamento
             </h3>
           </div>
-          <span className="text-xs text-slate-500 font-medium">
-            Atualizado em tempo real
-          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handlePrintResumo}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              title="Gerar e imprimir PDF com o Resumo Final do Orçamento"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-700" />
+              Imprimir Resumo (PDF)
+            </button>
+            <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+              Atualizado em tempo real
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -1831,7 +1875,17 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handlePrintResumo}
+              leftIcon={<Printer className="w-4 h-4 text-amber-700" />}
+              className="flex-1 sm:flex-none"
+              title="Imprimir Resumo Final em PDF"
+            >
+              Imprimir Resumo
+            </Button>
             <Button
               type="button"
               variant="ghost"
@@ -1978,6 +2032,16 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
           </div>
         </div>
       </Modal>
+
+      {/* Modal de Visualização e Impressão do PDF do Resumo Final */}
+      <OrcamentoPdfModal
+        isOpen={Boolean(printPdfData)}
+        onClose={() => setPrintPdfData(null)}
+        pdfUrl={printPdfData?.url || null}
+        filename={printPdfData?.filename || ''}
+        osNumber={osNumber}
+        clientName={clientName}
+      />
     </div>
   );
 };

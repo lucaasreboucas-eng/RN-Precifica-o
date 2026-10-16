@@ -8,6 +8,8 @@ import {
   DollarSign,
   Building2,
   Hash,
+  User,
+  Printer,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
@@ -18,6 +20,8 @@ import { OrcamentoFormView } from './OrcamentoFormView';
 import { formatCurrencyBRL } from '../../utils/pricingEngine';
 import { supabase, isSupabaseConfigured, getSupabaseClient } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { generateResumoOrcamentoPdf } from '../../utils/orcamentoPdfGenerator';
+import { OrcamentoPdfModal } from './OrcamentoPdfModal';
 
 const STORAGE_KEY = 'rn_precificacao_orcamentos_prod_v1';
 
@@ -45,6 +49,18 @@ export const OrcamentosView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingOrcamento, setDeletingOrcamento] = useState<Orcamento | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+
+  // Modal de Impressão do PDF do Resumo Final
+  const [printPdfData, setPrintPdfData] = useState<{
+    url: string;
+    filename: string;
+    orc: Orcamento;
+  } | null>(null);
+
+  const handlePrintOrcamento = (orc: Orcamento) => {
+    const result = generateResumoOrcamentoPdf(orc);
+    setPrintPdfData({ url: result.url, filename: result.filename, orc });
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -333,7 +349,8 @@ export const OrcamentosView: React.FC = () => {
     const term = searchTerm.toLowerCase();
     return (
       orc.osNumber.toLowerCase().includes(term) ||
-      orc.clientName.toLowerCase().includes(term)
+      orc.clientName.toLowerCase().includes(term) ||
+      (orc.responsavel && orc.responsavel.toLowerCase().includes(term))
     );
   });
 
@@ -404,6 +421,7 @@ export const OrcamentosView: React.FC = () => {
                 <tr>
                   <th className="py-3.5 px-4 sm:px-6">Número da OS</th>
                   <th className="py-3.5 px-4 sm:px-6">Nome do Cliente</th>
+                  <th className="py-3.5 px-4 sm:px-6">Responsável</th>
                   <th className="py-3.5 px-4 sm:px-6">Valor do Orçamento</th>
                   <th className="py-3.5 px-4 sm:px-6 text-right">Ações</th>
                 </tr>
@@ -411,7 +429,7 @@ export const OrcamentosView: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredOrcamentos.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-500">
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
                       Nenhum orçamento encontrado. Clique em "Novo Orçamento".
                     </td>
                   </tr>
@@ -439,6 +457,16 @@ export const OrcamentosView: React.FC = () => {
                         </div>
                       </td>
 
+                      {/* Responsável */}
+                      <td className="py-3.5 px-4 sm:px-6 text-slate-700 font-medium">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span className="truncate max-w-[200px] sm:max-w-none">
+                            {orc.responsavel || 'Não informado'}
+                          </span>
+                        </div>
+                      </td>
+
                       {/* Valor do Orçamento */}
                       <td className="py-3.5 px-4 sm:px-6 font-semibold text-emerald-700 font-mono">
                         {formatCurrencyBRL(orc.totalValue)}
@@ -447,6 +475,17 @@ export const OrcamentosView: React.FC = () => {
                       {/* Botões de Ação */}
                       <td className="py-3.5 px-4 sm:px-6 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handlePrintOrcamento(orc)}
+                            className="p-1.5 rounded-lg text-amber-700 hover:text-amber-900 hover:bg-amber-50 transition-colors flex items-center gap-1 text-xs"
+                            title="Imprimir resumo do orçamento em PDF"
+                            aria-label="Imprimir resumo do orçamento em PDF"
+                          >
+                            <Printer className="w-4 h-4" />
+                            <span className="hidden md:inline font-medium">Imprimir</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(orc)}
@@ -513,6 +552,16 @@ export const OrcamentosView: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Modal de Visualização e Impressão do PDF do Resumo Final */}
+      <OrcamentoPdfModal
+        isOpen={Boolean(printPdfData)}
+        onClose={() => setPrintPdfData(null)}
+        pdfUrl={printPdfData?.url || null}
+        filename={printPdfData?.filename || ''}
+        osNumber={printPdfData?.orc.osNumber}
+        clientName={printPdfData?.orc.clientName}
+      />
     </div>
   );
 };
