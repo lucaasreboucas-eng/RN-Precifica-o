@@ -91,6 +91,16 @@ export function calculatePricing(
     valorFinalVenda = base / denominador;
   }
 
+  // 4.5 Desconto (se Cliente com desconto for Sim)
+  const temDesconto = Boolean(params.temDesconto);
+  const descontoPercent = temDesconto ? Math.max(0, Number(params.descontoPercent) || 0) : 0;
+  const valorDesconto = temDesconto && valorFinalVenda > 0
+    ? valorFinalVenda * (descontoPercent / 100)
+    : 0;
+  const valorFinalVendaComDesconto = temDesconto
+    ? Math.max(0, valorFinalVenda - valorDesconto)
+    : valorFinalVenda;
+
   // Valor Recebido pela Empresa = Valor Final da Venda × (1 - Taxa Administrativa)
   const valorRecebidoEmpresa = valorFinalVenda * (1 - taxaAdminDecimal);
 
@@ -102,7 +112,12 @@ export function calculatePricing(
   const impostosETaxasTotais =
     impostoValor + issValor + antecipacaoValor + taxaAdministrativaValor;
 
-  const comissaoVendedorValor = valorRecebidoEmpresa * comissaoDecimal;
+  // Se o cliente tiver desconto: a comissão do vendedor passa a ser sobre o valor final da venda com desconto.
+  // Se não tiver desconto: comissão é sobre o Valor Recebido pela Empresa.
+  const comissaoVendedorValor = temDesconto
+    ? valorFinalVendaComDesconto * comissaoDecimal
+    : valorRecebidoEmpresa * comissaoDecimal;
+
   const recebidoAposComissao = valorRecebidoEmpresa - comissaoVendedorValor;
 
   // Diferença = Recebido pela Empresa após Comissão - Base
@@ -119,6 +134,10 @@ export function calculatePricing(
     isDenominadorValido,
     valorFinalVenda,
     valorRecebidoEmpresa,
+    temDesconto,
+    descontoPercent,
+    valorDesconto,
+    valorFinalVendaComDesconto,
     impostoValor,
     issValor,
     antecipacaoValor,

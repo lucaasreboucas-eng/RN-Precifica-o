@@ -474,8 +474,21 @@ export const OrcamentosView: React.FC = () => {
                       </td>
 
                       {/* Valor do Orçamento */}
-                      <td className="py-3.5 px-4 sm:px-6 font-semibold text-emerald-700 font-mono">
-                        {formatCurrencyBRL(orc.totalValue)}
+                      <td className="py-3.5 px-4 sm:px-6 font-mono">
+                        {orc.valorFinalComDesconto !== undefined ? (
+                          <div className="space-y-0.5">
+                            <span className="text-xs text-slate-400 line-through block font-normal">
+                              {formatCurrencyBRL(orc.totalValue)}
+                            </span>
+                            <span className="font-bold text-emerald-700 block">
+                              {formatCurrencyBRL(orc.valorFinalComDesconto)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-semibold text-emerald-700">
+                            {formatCurrencyBRL(orc.totalValue)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Botões de Ação */}

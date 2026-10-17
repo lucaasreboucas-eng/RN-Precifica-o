@@ -82,18 +82,38 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
   doc.text(formattedDate || new Date().toLocaleDateString('pt-BR'), 56, currentY + 20);
 
   // Status Badge on the right
-  doc.setFillColor(254, 243, 199); // Amber-100
-  doc.setDrawColor(245, 158, 11); // Amber-500
-  doc.roundedRect(pageWidth - 55, currentY + 5, 41, 14, 2, 2, 'FD');
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(180, 83, 9); // Amber-700
-  doc.text('VALOR FINAL VENDA', pageWidth - 34.5, currentY + 10, { align: 'center' });
-  doc.setFontSize(10);
-  doc.setTextColor(146, 64, 14); // Amber-800
-  doc.text(formatCurrencyBRL(calc.valorFinalVenda), pageWidth - 34.5, currentY + 16, {
-    align: 'center',
-  });
+  if (calc.temDesconto) {
+    doc.setFillColor(236, 253, 245); // Emerald-50
+    doc.setDrawColor(16, 185, 129); // Emerald-500
+    doc.roundedRect(pageWidth - 62, currentY + 3, 48, 18, 2, 2, 'FD');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(4, 120, 87); // Emerald-700
+    doc.text(`VALOR FINAL C/ DESC. (${calc.descontoPercent}%)`, pageWidth - 38, currentY + 8, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor(6, 95, 70); // Emerald-800
+    doc.text(formatCurrencyBRL(calc.valorFinalVendaComDesconto), pageWidth - 38, currentY + 14, {
+      align: 'center',
+    });
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Original: ${formatCurrencyBRL(calc.valorFinalVenda)}`, pageWidth - 38, currentY + 19, {
+      align: 'center',
+    });
+  } else {
+    doc.setFillColor(254, 243, 199); // Amber-100
+    doc.setDrawColor(245, 158, 11); // Amber-500
+    doc.roundedRect(pageWidth - 55, currentY + 5, 41, 14, 2, 2, 'FD');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(180, 83, 9); // Amber-700
+    doc.text('VALOR FINAL VENDA', pageWidth - 34.5, currentY + 10, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor(146, 64, 14); // Amber-800
+    doc.text(formatCurrencyBRL(calc.valorFinalVenda), pageWidth - 34.5, currentY + 16, {
+      align: 'center',
+    });
+  }
 
   currentY += 30;
 
@@ -105,7 +125,7 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
 
   currentY += 4;
 
-  const resumoRows = [
+  const resumoRows: any[] = [
     [
       { content: 'Custo Total dos Itens', styles: { fontStyle: 'bold' } },
       { content: formatCurrencyBRL(calc.custoTotal), styles: { halign: 'right' } },
@@ -115,7 +135,12 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
     [
       { content: 'Impostos e Taxas sobre Venda', styles: { fontStyle: 'bold' } },
       { content: formatCurrencyBRL(calc.impostosETaxasTotais), styles: { halign: 'right' } },
-      { content: 'Comissão do Vendedor', styles: { fontStyle: 'bold' } },
+      {
+        content: calc.temDesconto
+          ? `Comissão Vendedor (${orcamento.parametros?.comissaoVendedorPercent || 0}% s/ Venda c/ Desc.)`
+          : `Comissão Vendedor (${orcamento.parametros?.comissaoVendedorPercent || 0}%)`,
+        styles: { fontStyle: 'bold' },
+      },
       { content: formatCurrencyBRL(calc.comissaoVendedorValor), styles: { halign: 'right', textColor: [4, 120, 87] } },
     ],
     [
@@ -125,6 +150,27 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
       { content: formatCurrencyBRL(calc.recebidoAposComissao), styles: { halign: 'right', fontStyle: 'bold', fillColor: [239, 246, 255], textColor: [30, 64, 175] } },
     ],
   ];
+
+  if (calc.temDesconto) {
+    resumoRows.push([
+      {
+        content: `DESCONTO CONCEDIDO (${calc.descontoPercent}%)`,
+        styles: { fontStyle: 'bold', fillColor: [254, 242, 242], textColor: [185, 28, 28] },
+      },
+      {
+        content: `-${formatCurrencyBRL(calc.valorDesconto)}`,
+        styles: { halign: 'right', fontStyle: 'bold', fillColor: [254, 242, 242], textColor: [185, 28, 28] },
+      },
+      {
+        content: 'VALOR FINAL DA VENDA COM DESCONTO',
+        styles: { fontStyle: 'bold', fillColor: [236, 253, 245], textColor: [4, 120, 87] },
+      },
+      {
+        content: formatCurrencyBRL(calc.valorFinalVendaComDesconto),
+        styles: { halign: 'right', fontStyle: 'bold', fillColor: [236, 253, 245], textColor: [4, 120, 87] },
+      },
+    ]);
+  }
 
   autoTable(doc, {
     startY: currentY,
@@ -197,8 +243,15 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
         { content: formatCurrencyBRL(calc.custoTotal), styles: { halign: 'right', fontStyle: 'bold' } },
         { content: '—', styles: { halign: 'center' } },
         {
-          content: formatCurrencyBRL(calc.valorFinalVenda),
-          styles: { halign: 'right', fontStyle: 'bold', fillColor: [254, 243, 199], textColor: [146, 64, 14] },
+          content: calc.temDesconto
+            ? `${formatCurrencyBRL(calc.valorFinalVenda)} (Orig.)\n${formatCurrencyBRL(calc.valorFinalVendaComDesconto)} (c/ Desc.)`
+            : formatCurrencyBRL(calc.valorFinalVenda),
+          styles: {
+            halign: 'right',
+            fontStyle: 'bold',
+            fillColor: calc.temDesconto ? [236, 253, 245] : [254, 243, 199],
+            textColor: calc.temDesconto ? [4, 120, 87] : [146, 64, 14],
+          },
         },
       ],
     ],

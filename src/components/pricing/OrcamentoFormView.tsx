@@ -89,7 +89,13 @@ const loadSavedDefaultParams = (): PricingParameters => {
   }
 };
 
-type ParamKey = keyof PricingParameters;
+type ParamKey =
+  | 'margemLucroPercent'
+  | 'impostoFaturamentoPercent'
+  | 'taxaAdministrativaPercent'
+  | 'comissaoVendedorPercent'
+  | 'issPercent'
+  | 'antecipacaoPercent';
 
 interface ParamFieldMeta {
   key: ParamKey;
@@ -173,12 +179,48 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     loadSavedDefaultParams()
   );
 
-  // Parâmetros ativos neste orçamento
-  const [params, setParams] = useState<PricingParameters>(() =>
-    initialOrcamento?.parametros
-      ? { ...initialOrcamento.parametros }
-      : loadSavedDefaultParams()
+  // Pergunta: Cliente com desconto?
+  const [temDesconto, setTemDesconto] = useState<boolean>(() =>
+    Boolean(initialOrcamento?.parametros?.temDesconto)
   );
+  const [descontoInput, setDescontoInput] = useState<string>(() =>
+    initialOrcamento?.parametros?.descontoPercent !== undefined
+      ? String(initialOrcamento.parametros.descontoPercent)
+      : '0'
+  );
+
+  // Parâmetros ativos neste orçamento
+  const [params, setParams] = useState<PricingParameters>(() => {
+    const startParams = initialOrcamento?.parametros
+      ? initialOrcamento.parametros
+      : loadSavedDefaultParams();
+    return {
+      ...startParams,
+      temDesconto: Boolean(startParams.temDesconto),
+      descontoPercent: Number(startParams.descontoPercent) || 0,
+    };
+  });
+
+  const handleToggleTemDesconto = (novoValor: boolean) => {
+    setTemDesconto(novoValor);
+    const parsedDesc = parseFloat(descontoInput.replace(',', '.')) || 0;
+    setParams((prev) => ({
+      ...prev,
+      temDesconto: novoValor,
+      descontoPercent: novoValor ? (isNaN(parsedDesc) ? 0 : parsedDesc) : 0,
+    }));
+  };
+
+  const handleDescontoInputChange = (val: string) => {
+    setDescontoInput(val);
+    const parsed = parseFloat(val.replace(',', '.'));
+    const safeNum = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+    setParams((prev) => ({
+      ...prev,
+      temDesconto: true,
+      descontoPercent: safeNum,
+    }));
+  };
 
   // Textos dos inputs de parâmetros (permite apagar totalmente o campo durante a edição)
   const [paramInputs, setParamInputs] = useState<Record<ParamKey, string>>(() => {
@@ -239,7 +281,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             // ignore
           }
           if (!initialOrcamento) {
-            setParams(validDefaults);
+            setParams((prev) => ({
+              ...validDefaults,
+              temDesconto: prev.temDesconto,
+              descontoPercent: prev.descontoPercent,
+            }));
             setParamInputs({
               margemLucroPercent: String(validDefaults.margemLucroPercent),
               impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
@@ -392,6 +438,7 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       parametros: params,
       itens,
       totalValue: calc.valorFinalVenda,
+      valorFinalComDesconto: calc.temDesconto ? calc.valorFinalVendaComDesconto : undefined,
       custoTotal: calc.custoTotal,
       base: calc.base,
     };
@@ -927,6 +974,19 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       return;
     }
 
+    const parsedDesc = parseFloat(descontoInput.replace(',', '.'));
+    if (temDesconto && (descontoInput.trim() === '' || isNaN(parsedDesc) || parsedDesc < 0 || parsedDesc > 100)) {
+      setSaveError('Informe um percentual de desconto válido entre 0% e 100%.');
+      setParamSectionFeedback({
+        type: 'error',
+        message: 'Informe um percentual de desconto válido entre 0% e 100% no campo de desconto.',
+      });
+      return;
+    }
+
+    validatedParams.temDesconto = temDesconto;
+    validatedParams.descontoPercent = temDesconto ? parsedDesc : 0;
+
     // Lock any open parameter edits with their valid numbers
     setParams(validatedParams);
     setEditingParams({
@@ -972,6 +1032,7 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       parametros: validatedParams,
       itens,
       totalValue: finalCalc.valorFinalVenda,
+      valorFinalComDesconto: finalCalc.temDesconto ? finalCalc.valorFinalVendaComDesconto : undefined,
       custoTotal: finalCalc.custoTotal,
       base: finalCalc.base,
     };
@@ -1284,6 +1345,88 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
               );
             })}
           </div>
+
+          {/* Pergunta: Cliente com desconto? */}
+          <div className="mt-5 pt-4 border-t border-slate-200">
+            <div
+              className={`p-4 rounded-xl border transition-all ${
+                temDesconto
+                  ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-100'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-slate-800">
+                      Cliente com desconto?
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        temDesconto
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {temDesconto ? 'Desconto Ativo' : 'Sem Desconto'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-xl">
+                    Se o cliente não tiver desconto, o cálculo permanece o mesmo. Se tiver desconto, informe a % do desconto para calcular o valor final da venda com desconto e a comissão do vendedor sobre esse valor.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
+                  <div className="inline-flex p-1 bg-slate-200/90 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTemDesconto(false)}
+                      className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                        !temDesconto
+                          ? 'bg-white text-slate-900 shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Não
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTemDesconto(true)}
+                      className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all ${
+                        temDesconto
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Sim
+                    </button>
+                  </div>
+
+                  {temDesconto && (
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-28 sm:w-32">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={descontoInput}
+                          onChange={(e) => handleDescontoInputChange(e.target.value)}
+                          placeholder="Ex: 10"
+                          className="w-full pr-8 pl-3 py-1.5 bg-white border-2 border-amber-500 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs"
+                          autoFocus
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">
+                          %
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-amber-800">
+                        de Desconto
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -1558,7 +1701,13 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-amber-50/70 border-2 border-amber-300 space-y-2">
+            <div
+              className={`p-4 rounded-xl border-2 space-y-2 ${
+                calc.temDesconto
+                  ? 'bg-amber-50/90 border-amber-400'
+                  : 'bg-amber-50/70 border-amber-300'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-amber-900 uppercase tracking-wide">
                   4.4 Valor Final da Venda
@@ -1568,11 +1717,33 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-amber-900/80">
-                Valor que deverá ser faturado para garantir a Base desejada.
+                {calc.temDesconto
+                  ? 'Valor de venda sem desconto (base faturada):'
+                  : 'Valor que deverá ser faturado para garantir a Base desejada.'}
               </p>
-              <div className="text-xl font-extrabold text-slate-900 font-mono">
+              <div
+                className={`font-mono ${
+                  calc.temDesconto
+                    ? 'text-base font-semibold text-slate-500 line-through'
+                    : 'text-xl font-extrabold text-slate-900'
+                }`}
+              >
                 {formatCurrencyBRL(calc.valorFinalVenda)}
               </div>
+
+              {calc.temDesconto && (
+                <div className="mt-2.5 pt-2 border-t border-amber-300 space-y-1">
+                  <div className="flex items-center justify-between text-xs font-bold text-amber-950 uppercase">
+                    <span>Valor Final com Desconto ({calc.descontoPercent}%):</span>
+                    <span className="text-[10px] text-emerald-800 bg-emerald-100 font-bold px-1.5 py-0.5 rounded">
+                      -{formatCurrencyBRL(calc.valorDesconto)}
+                    </span>
+                  </div>
+                  <div className="text-2xl font-extrabold text-emerald-700 font-mono">
+                    {formatCurrencyBRL(calc.valorFinalVendaComDesconto)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1654,11 +1825,24 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
               <div className="flex items-center justify-between text-xs text-slate-600 mb-1 font-medium">
                 <span>Comissão Vendedor ({params.comissaoVendedorPercent}%)</span>
-                <span className="text-[10px] text-emerald-700 font-bold">Pós Taxa Adm</span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    calc.temDesconto
+                      ? 'text-amber-800 bg-amber-100'
+                      : 'text-emerald-700 bg-emerald-50'
+                  }`}
+                >
+                  {calc.temDesconto ? 'Sobre Venda c/ Desc.' : 'Pós Taxa Adm'}
+                </span>
               </div>
               <div className="text-base font-bold text-emerald-700 font-mono">
                 {formatCurrencyBRL(calc.comissaoVendedorValor)}
               </div>
+              {calc.temDesconto && (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Base: {formatCurrencyBRL(calc.valorFinalVendaComDesconto)} × {params.comissaoVendedorPercent}%
+                </p>
+              )}
             </div>
 
             {/* Recebido após Comissão */}
@@ -1711,7 +1895,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div
+          className={`grid grid-cols-2 sm:grid-cols-3 ${
+            calc.temDesconto ? 'lg:grid-cols-7' : 'lg:grid-cols-6'
+          } gap-4`}
+        >
           <div className="space-y-1">
             <span className="text-[11px] font-semibold text-slate-500 block uppercase">
               Custo Total
@@ -1746,16 +1934,36 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             <span className="text-base sm:text-lg font-bold text-emerald-700 font-mono">
               {formatCurrencyBRL(calc.comissaoVendedorValor)}
             </span>
+            {calc.temDesconto && (
+              <span className="text-[10px] text-emerald-600 block font-medium">
+                (s/ venda c/ desc.)
+              </span>
+            )}
           </div>
 
           <div className="space-y-1 col-span-2 sm:col-span-1 bg-amber-50 p-3 rounded-xl border border-amber-300">
             <span className="text-[11px] font-bold text-amber-900 block uppercase">
               Valor Final Venda
             </span>
-            <span className="text-lg sm:text-xl font-extrabold text-amber-800 font-mono">
+            <span
+              className={`text-lg sm:text-xl font-extrabold font-mono ${
+                calc.temDesconto ? 'text-slate-500 line-through' : 'text-amber-800'
+              }`}
+            >
               {formatCurrencyBRL(calc.valorFinalVenda)}
             </span>
           </div>
+
+          {calc.temDesconto && (
+            <div className="space-y-1 col-span-2 sm:col-span-1 bg-emerald-50 p-3 rounded-xl border-2 border-emerald-400 ring-2 ring-emerald-100">
+              <span className="text-[11px] font-bold text-emerald-900 block uppercase">
+                Venda c/ Desconto ({calc.descontoPercent}%)
+              </span>
+              <span className="text-lg sm:text-xl font-extrabold text-emerald-700 font-mono">
+                {formatCurrencyBRL(calc.valorFinalVendaComDesconto)}
+              </span>
+            </div>
+          )}
 
           <div className="space-y-1 col-span-2 sm:col-span-1 bg-blue-50 p-3 rounded-xl border border-blue-200">
             <span className="text-[11px] font-bold text-blue-900 block uppercase">
@@ -1789,7 +1997,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                   <th className="py-2.5 px-3 sm:px-4 text-right">Custo Total</th>
                   <th className="py-2.5 px-3 sm:px-4 text-right">Preço Venda Unitário</th>
                   <th className="py-2.5 px-3 sm:px-4 text-right font-bold text-amber-900 bg-amber-100/40">
-                    Valor Final de Venda (R$)
+                    {calc.temDesconto
+                      ? `Valor Final c/ Desconto (${calc.descontoPercent}%)`
+                      : 'Valor Final de Venda (R$)'}
                   </th>
                 </tr>
               </thead>
@@ -1816,6 +2026,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                       item.quantidade > 0
                         ? itemValorFinalVenda / item.quantidade
                         : 0;
+                    const itemValorComDesconto = calc.temDesconto
+                      ? itemValorFinalVenda * (1 - calc.descontoPercent / 100)
+                      : itemValorFinalVenda;
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
@@ -1837,8 +2050,21 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                         <td className="py-2.5 px-3 sm:px-4 text-right font-mono text-slate-800 font-medium">
                           {formatCurrencyBRL(itemVendaUnit)}
                         </td>
-                        <td className="py-2.5 px-3 sm:px-4 text-right font-mono font-extrabold text-amber-800 text-sm bg-amber-50/40">
-                          {formatCurrencyBRL(itemValorFinalVenda)}
+                        <td className="py-2.5 px-3 sm:px-4 text-right font-mono text-sm bg-amber-50/40">
+                          {calc.temDesconto ? (
+                            <div>
+                              <span className="text-[11px] text-slate-400 line-through block font-normal">
+                                {formatCurrencyBRL(itemValorFinalVenda)}
+                              </span>
+                              <span className="font-extrabold text-emerald-700">
+                                {formatCurrencyBRL(itemValorComDesconto)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="font-extrabold text-amber-800">
+                              {formatCurrencyBRL(itemValorFinalVenda)}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1859,8 +2085,21 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                   <td className="py-2.5 px-3 sm:px-4 text-right text-slate-400 font-normal">
                     —
                   </td>
-                  <td className="py-2.5 px-3 sm:px-4 text-right font-mono text-base font-extrabold text-amber-900 bg-amber-100/60">
-                    {formatCurrencyBRL(calc.valorFinalVenda)}
+                  <td className="py-2.5 px-3 sm:px-4 text-right font-mono text-base font-extrabold bg-amber-100/60">
+                    {calc.temDesconto ? (
+                      <div className="space-y-0.5">
+                        <div className="text-xs text-slate-500 line-through font-normal">
+                          {formatCurrencyBRL(calc.valorFinalVenda)}
+                        </div>
+                        <div className="text-emerald-700">
+                          {formatCurrencyBRL(calc.valorFinalVendaComDesconto)}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-amber-900">
+                        {formatCurrencyBRL(calc.valorFinalVenda)}
+                      </span>
+                    )}
                   </td>
                 </tr>
               </tfoot>

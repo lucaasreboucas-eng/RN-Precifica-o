@@ -5,6 +5,8 @@ export interface PricingParameters {
   comissaoVendedorPercent: number; // %
   issPercent: number; // %
   antecipacaoPercent: number; // %
+  temDesconto?: boolean;
+  descontoPercent?: number; // %
 }
 
 export interface OrcamentoItem {
@@ -32,6 +34,11 @@ export interface PricingCalculations {
   isDenominadorValido: boolean;
   valorFinalVenda: number;
   valorRecebidoEmpresa: number;
+  // Desconto
+  temDesconto: boolean;
+  descontoPercent: number;
+  valorDesconto: number;
+  valorFinalVendaComDesconto: number;
   // Demonstrativo Financeiro
   impostoValor: number;
   issValor: number;
@@ -55,6 +62,7 @@ export interface Orcamento {
   parametros: PricingParameters;
   itens: OrcamentoItem[];
   totalValue: number; // Valor Final da Venda (Faturado)
+  valorFinalComDesconto?: number;
   custoTotal?: number;
   base?: number;
 }
