@@ -239,46 +239,40 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             // ignore
           }
           if (!initialOrcamento) {
-            setEditingParams((currEditing) => {
-              const isAnyEditing = Object.values(currEditing).some(Boolean);
-              if (!isAnyEditing) {
-                setParams(validDefaults);
-                setParamInputs({
-                  margemLucroPercent: String(validDefaults.margemLucroPercent),
-                  impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
-                  taxaAdministrativaPercent: String(validDefaults.taxaAdministrativaPercent),
-                  comissaoVendedorPercent: String(validDefaults.comissaoVendedorPercent),
-                  issPercent: String(validDefaults.issPercent),
-                  antecipacaoPercent: String(validDefaults.antecipacaoPercent),
-                });
-                setPreviousParamValues({
-                  margemLucroPercent: {
-                    num: validDefaults.margemLucroPercent,
-                    text: String(validDefaults.margemLucroPercent),
-                  },
-                  impostoFaturamentoPercent: {
-                    num: validDefaults.impostoFaturamentoPercent,
-                    text: String(validDefaults.impostoFaturamentoPercent),
-                  },
-                  taxaAdministrativaPercent: {
-                    num: validDefaults.taxaAdministrativaPercent,
-                    text: String(validDefaults.taxaAdministrativaPercent),
-                  },
-                  comissaoVendedorPercent: {
-                    num: validDefaults.comissaoVendedorPercent,
-                    text: String(validDefaults.comissaoVendedorPercent),
-                  },
-                  issPercent: {
-                    num: validDefaults.issPercent,
-                    text: String(validDefaults.issPercent),
-                  },
-                  antecipacaoPercent: {
-                    num: validDefaults.antecipacaoPercent,
-                    text: String(validDefaults.antecipacaoPercent),
-                  },
-                });
-              }
-              return currEditing;
+            setParams(validDefaults);
+            setParamInputs({
+              margemLucroPercent: String(validDefaults.margemLucroPercent),
+              impostoFaturamentoPercent: String(validDefaults.impostoFaturamentoPercent),
+              taxaAdministrativaPercent: String(validDefaults.taxaAdministrativaPercent),
+              comissaoVendedorPercent: String(validDefaults.comissaoVendedorPercent),
+              issPercent: String(validDefaults.issPercent),
+              antecipacaoPercent: String(validDefaults.antecipacaoPercent),
+            });
+            setPreviousParamValues({
+              margemLucroPercent: {
+                num: validDefaults.margemLucroPercent,
+                text: String(validDefaults.margemLucroPercent),
+              },
+              impostoFaturamentoPercent: {
+                num: validDefaults.impostoFaturamentoPercent,
+                text: String(validDefaults.impostoFaturamentoPercent),
+              },
+              taxaAdministrativaPercent: {
+                num: validDefaults.taxaAdministrativaPercent,
+                text: String(validDefaults.taxaAdministrativaPercent),
+              },
+              comissaoVendedorPercent: {
+                num: validDefaults.comissaoVendedorPercent,
+                text: String(validDefaults.comissaoVendedorPercent),
+              },
+              issPercent: {
+                num: validDefaults.issPercent,
+                text: String(validDefaults.issPercent),
+              },
+              antecipacaoPercent: {
+                num: validDefaults.antecipacaoPercent,
+                text: String(validDefaults.antecipacaoPercent),
+              },
             });
           }
         }
@@ -771,6 +765,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ defaultParams: updatedDefaults }),
       });
+      await fetch('/api/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
     } catch (err) {
       console.warn('Aviso ao sincronizar parâmetros padrão no servidor:', err);
     }
@@ -869,6 +868,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
         body: JSON.stringify({ defaultParams: updatedDefaults }),
       });
       await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: updatedDefaults }),
+      });
+      await fetch('/api/store', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ defaultParams: updatedDefaults }),

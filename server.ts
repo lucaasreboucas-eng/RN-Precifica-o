@@ -503,6 +503,18 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     res.json(store);
   });
 
+  app.post('/api/store', (req, res) => {
+    const store = readStore();
+    if (req.body?.defaultParams && typeof req.body.defaultParams === 'object') {
+      store.defaultParams = {
+        ...store.defaultParams,
+        ...req.body.defaultParams,
+      };
+      writeStore(store);
+    }
+    res.json(store);
+  });
+
   app.post('/api/store/sync', (req, res) => {
     const store = readStore();
     const { profiles, users, orcamentos, defaultParams } = req.body || {};
