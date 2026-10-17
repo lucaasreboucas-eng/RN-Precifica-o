@@ -682,7 +682,62 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     }
   };
 
-  const handleConfirmParam = (field: ParamKey) => {
+  const persistDefaultParams = async (newDefaults: PricingParameters) => {
+    const sanitized: PricingParameters = {
+      margemLucroPercent:
+        typeof newDefaults.margemLucroPercent === 'number' && !isNaN(newDefaults.margemLucroPercent)
+          ? newDefaults.margemLucroPercent
+          : FALLBACK_DEFAULT_PARAMS.margemLucroPercent,
+      impostoFaturamentoPercent:
+        typeof newDefaults.impostoFaturamentoPercent === 'number' && !isNaN(newDefaults.impostoFaturamentoPercent)
+          ? newDefaults.impostoFaturamentoPercent
+          : FALLBACK_DEFAULT_PARAMS.impostoFaturamentoPercent,
+      taxaAdministrativaPercent:
+        typeof newDefaults.taxaAdministrativaPercent === 'number' && !isNaN(newDefaults.taxaAdministrativaPercent)
+          ? newDefaults.taxaAdministrativaPercent
+          : FALLBACK_DEFAULT_PARAMS.taxaAdministrativaPercent,
+      comissaoVendedorPercent:
+        typeof newDefaults.comissaoVendedorPercent === 'number' && !isNaN(newDefaults.comissaoVendedorPercent)
+          ? newDefaults.comissaoVendedorPercent
+          : FALLBACK_DEFAULT_PARAMS.comissaoVendedorPercent,
+      issPercent:
+        typeof newDefaults.issPercent === 'number' && !isNaN(newDefaults.issPercent)
+          ? newDefaults.issPercent
+          : FALLBACK_DEFAULT_PARAMS.issPercent,
+      antecipacaoPercent:
+        typeof newDefaults.antecipacaoPercent === 'number' && !isNaN(newDefaults.antecipacaoPercent)
+          ? newDefaults.antecipacaoPercent
+          : FALLBACK_DEFAULT_PARAMS.antecipacaoPercent,
+    };
+
+    setDefaultParams(sanitized);
+
+    try {
+      localStorage.setItem(DEFAULT_PARAMS_STORAGE_KEY, JSON.stringify(sanitized));
+    } catch {}
+
+    try {
+      await fetch('/api/store/default-params', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: sanitized }),
+      });
+      await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: sanitized }),
+      });
+      await fetch('/api/store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultParams: sanitized }),
+      });
+    } catch (err) {
+      console.warn('Aviso ao sincronizar parâmetros padrão no servidor:', err);
+    }
+  };
+
+  const handleConfirmParam = async (field: ParamKey) => {
     const raw = paramInputs[field]?.trim() ?? '';
     const num = parseFloat(raw.replace(',', '.'));
 
@@ -721,6 +776,23 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       [field]: false,
     }));
     setParamSectionFeedback(null);
+
+    // Salva automaticamente como padrão para os próximos orçamentos
+    const updatedDefaults: PricingParameters = {
+      margemLucroPercent: field === 'margemLucroPercent' ? num : (Number(params.margemLucroPercent) || defaultParams.margemLucroPercent),
+      impostoFaturamentoPercent: field === 'impostoFaturamentoPercent' ? num : (Number(params.impostoFaturamentoPercent) ?? defaultParams.impostoFaturamentoPercent),
+      taxaAdministrativaPercent: field === 'taxaAdministrativaPercent' ? num : (Number(params.taxaAdministrativaPercent) ?? defaultParams.taxaAdministrativaPercent),
+      comissaoVendedorPercent: field === 'comissaoVendedorPercent' ? num : (Number(params.comissaoVendedorPercent) ?? defaultParams.comissaoVendedorPercent),
+      issPercent: field === 'issPercent' ? num : (Number(params.issPercent) ?? defaultParams.issPercent),
+      antecipacaoPercent: field === 'antecipacaoPercent' ? num : (Number(params.antecipacaoPercent) ?? defaultParams.antecipacaoPercent),
+    };
+    await persistDefaultParams(updatedDefaults);
+
+    const fieldLabel = PARAM_FIELDS.find((f) => f.key === field)?.label || 'Parâmetro';
+    setParamSectionFeedback({
+      type: 'success',
+      message: `✓ ${fieldLabel} salvo e definido como padrão (${num}%) para os próximos orçamentos!`,
+    });
   };
 
   const handleCancelEditParam = (field: ParamKey) => {
@@ -762,24 +834,6 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     }
 
     const formattedText = String(num);
-    const currentSaved = loadSavedDefaultParams();
-    const updatedDefaults: PricingParameters = {
-      ...FALLBACK_DEFAULT_PARAMS,
-      ...defaultParams,
-      ...currentSaved,
-      [field]: num,
-    };
-
-    try {
-      localStorage.setItem(
-        DEFAULT_PARAMS_STORAGE_KEY,
-        JSON.stringify(updatedDefaults)
-      );
-    } catch {
-      // Ignore storage errors
-    }
-
-    setDefaultParams(updatedDefaults);
     setParams((prev) => ({
       ...prev,
       [field]: num,
@@ -801,25 +855,16 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       [field]: false,
     }));
 
-    try {
-      await fetch('/api/store/default-params', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-      await fetch('/api/store/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-      await fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-    } catch (err) {
-      console.warn('Aviso ao sincronizar parâmetros padrão no servidor:', err);
-    }
+    const updatedDefaults: PricingParameters = {
+      margemLucroPercent: field === 'margemLucroPercent' ? num : (Number(params.margemLucroPercent) || defaultParams.margemLucroPercent),
+      impostoFaturamentoPercent: field === 'impostoFaturamentoPercent' ? num : (Number(params.impostoFaturamentoPercent) ?? defaultParams.impostoFaturamentoPercent),
+      taxaAdministrativaPercent: field === 'taxaAdministrativaPercent' ? num : (Number(params.taxaAdministrativaPercent) ?? defaultParams.taxaAdministrativaPercent),
+      comissaoVendedorPercent: field === 'comissaoVendedorPercent' ? num : (Number(params.comissaoVendedorPercent) ?? defaultParams.comissaoVendedorPercent),
+      issPercent: field === 'issPercent' ? num : (Number(params.issPercent) ?? defaultParams.issPercent),
+      antecipacaoPercent: field === 'antecipacaoPercent' ? num : (Number(params.antecipacaoPercent) ?? defaultParams.antecipacaoPercent),
+    };
+
+    await persistDefaultParams(updatedDefaults);
 
     const fieldLabel =
       PARAM_FIELDS.find((f) => f.key === field)?.label || 'Parâmetro';
@@ -830,11 +875,8 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
   };
 
   const handleSaveAllParamsAsDefault = async () => {
-    const currentSaved = loadSavedDefaultParams();
     const updatedDefaults: PricingParameters = {
-      ...FALLBACK_DEFAULT_PARAMS,
       ...defaultParams,
-      ...currentSaved,
     };
     const missingLabels: string[] = [];
 
@@ -856,15 +898,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       return;
     }
 
-    try {
-      localStorage.setItem(
-        DEFAULT_PARAMS_STORAGE_KEY,
-        JSON.stringify(updatedDefaults)
-      );
-    } catch {}
-
-    setDefaultParams(updatedDefaults);
-    setParams(updatedDefaults);
+    await persistDefaultParams(updatedDefaults);
+    setParams((prev) => ({
+      ...prev,
+      ...updatedDefaults,
+    }));
     setParamInputs({
       margemLucroPercent: String(updatedDefaults.margemLucroPercent),
       impostoFaturamentoPercent: String(updatedDefaults.impostoFaturamentoPercent),
@@ -908,27 +946,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       antecipacaoPercent: false,
     });
 
-    try {
-      await fetch('/api/store/default-params', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-      await fetch('/api/store/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-      await fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultParams: updatedDefaults }),
-      });
-    } catch {}
-
     setParamSectionFeedback({
       type: 'success',
-      message: '✓ Todos os parâmetros foram salvos com sucesso como novos valores padrão para os próximos orçamentos!',
+      message: '✓ Todos os 6 parâmetros do orçamento foram salvos como padrão para os próximos orçamentos!',
     });
   };
 

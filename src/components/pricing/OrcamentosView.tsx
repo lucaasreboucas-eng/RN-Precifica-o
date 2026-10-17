@@ -103,6 +103,7 @@ export const OrcamentosView: React.FC = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               orcamentos: localQuotes,
+              defaultParams: localDefaults && typeof localDefaults === 'object' ? localDefaults : undefined,
             }),
           });
           if (syncRes.ok && isMounted) {
@@ -120,6 +121,7 @@ export const OrcamentosView: React.FC = () => {
               try {
                 const serverDefaults = {
                   ...FALLBACK_DEFAULT_PARAMS,
+                  ...(localDefaults || {}),
                   ...storeData.defaultParams,
                 };
                 localStorage.setItem(
@@ -189,8 +191,14 @@ export const OrcamentosView: React.FC = () => {
           if (data && isMounted) {
             if (data.defaultParams && typeof data.defaultParams === 'object') {
               try {
+                let currentLocal: any = {};
+                try {
+                  const raw = localStorage.getItem('rn_precificacao_default_params_v1');
+                  if (raw) currentLocal = JSON.parse(raw);
+                } catch {}
                 const serverDefaults = {
                   ...FALLBACK_DEFAULT_PARAMS,
+                  ...(currentLocal || {}),
                   ...data.defaultParams,
                 };
                 localStorage.setItem(
