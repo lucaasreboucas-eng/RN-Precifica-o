@@ -137,7 +137,7 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
       { content: formatCurrencyBRL(calc.impostosETaxasTotais), styles: { halign: 'right' } },
       {
         content: calc.temDesconto
-          ? `Comissão Vendedor (${orcamento.parametros?.comissaoVendedorPercent || 0}% s/ Venda c/ Desc.)`
+          ? `Comissão Vendedor (${orcamento.parametros?.comissaoVendedorPercent || 0}% s/ NOTA)`
           : `Comissão Vendedor (${orcamento.parametros?.comissaoVendedorPercent || 0}%)`,
         styles: { fontStyle: 'bold' },
       },
@@ -207,10 +207,8 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
     const itemCustoTotal = item.quantidade * item.custoUnitario;
     const itemLucro = itemCustoTotal * ((orcamento.parametros?.margemLucroPercent || 0) / 100);
     const itemBase = itemCustoTotal + itemLucro;
-    const itemValorFinalVenda =
-      calc.isDenominadorValido && calc.denominador > 0 && calc.base > 0
-        ? itemBase / calc.denominador
-        : 0;
+    const itemProportion = calc.base > 0 ? itemBase / calc.base : 0;
+    const itemValorFinalVenda = calc.valorFinalVenda * itemProportion;
     const itemVendaUnit =
       item.quantidade > 0 ? itemValorFinalVenda / item.quantidade : 0;
 

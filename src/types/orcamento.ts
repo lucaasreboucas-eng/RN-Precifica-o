@@ -34,11 +34,15 @@ export interface PricingCalculations {
   isDenominadorValido: boolean;
   valorFinalVenda: number;
   valorRecebidoEmpresa: number;
-  // Desconto
+  // Desconto & Encargos sobre NOTA
   temDesconto: boolean;
   descontoPercent: number;
   valorDesconto: number;
   valorFinalVendaComDesconto: number;
+  encargosTotaisNotaPercent: number;
+  encargosTotaisNotaDecimal: number;
+  isEncargosValido: boolean;
+  encargosErrorMessage?: string;
   // Demonstrativo Financeiro
   impostoValor: number;
   issValor: number;

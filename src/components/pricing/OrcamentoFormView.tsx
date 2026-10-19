@@ -18,6 +18,7 @@ import {
   X,
   BookmarkCheck,
   Printer,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
@@ -1038,6 +1039,17 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
     }
 
     const finalCalc = calculatePricing(itens, validatedParams);
+    if (temDesconto && !finalCalc.isEncargosValido) {
+      const msg =
+        finalCalc.encargosErrorMessage ||
+        `Os Encargos Totais sobre a NOTA são iguais ou superiores a 100% (${finalCalc.encargosTotaisNotaPercent.toFixed(2)}%). O cálculo e o salvamento foram impedidos.`;
+      setSaveError(msg);
+      setParamSectionFeedback({
+        type: 'error',
+        message: msg,
+      });
+      return;
+    }
     if (!finalCalc.isDenominadorValido) {
       setSaveError(
         'O denominador de cálculo é inválido (<= 0). Por favor, revise os percentuais de impostos e taxas nos Parâmetros do Orçamento.'
@@ -1386,7 +1398,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             <div
               className={`p-4 rounded-xl border transition-all ${
                 temDesconto
-                  ? 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-100'
+                  ? !calc.isEncargosValido
+                    ? 'bg-red-50/80 border-red-400 ring-2 ring-red-100'
+                    : 'bg-amber-50/70 border-amber-400 ring-2 ring-amber-100'
                   : 'bg-slate-50 border-slate-200'
               }`}
             >
@@ -1399,7 +1413,9 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                         temDesconto
-                          ? 'bg-amber-200 text-amber-900'
+                          ? !calc.isEncargosValido
+                            ? 'bg-red-200 text-red-900'
+                            : 'bg-amber-200 text-amber-900'
                           : 'bg-slate-200 text-slate-700'
                       }`}
                     >
@@ -1407,7 +1423,7 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 max-w-xl">
-                    Se o cliente não tiver desconto, o cálculo permanece o mesmo. Se tiver desconto, informe a % do desconto para calcular o valor final da venda com desconto e a comissão do vendedor sobre esse valor.
+                    Se o cliente não tiver desconto, o cálculo permanece o mesmo. Se tiver desconto, informe a % do desconto para calcular o preço de venda e o preço final com desconto, preservando o lucro desejado.
                   </p>
                 </div>
 
@@ -1460,6 +1476,59 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                   )}
                 </div>
               </div>
+
+              {/* Quando Cliente com desconto for Sim: campo Encargos Totais (%) sobre a NOTA */}
+              {temDesconto && (
+                <div className="mt-4 pt-3.5 border-t border-amber-200/80">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/90 p-3.5 rounded-lg border border-amber-300 shadow-2xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                          Encargos Totais (%) sobre a NOTA:
+                        </span>
+                        <span
+                          className={`text-xs font-mono font-extrabold px-2 py-0.5 rounded ${
+                            calc.isEncargosValido
+                              ? 'bg-amber-100 text-amber-900'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
+                          {calc.encargosTotaisNotaPercent.toFixed(2)}%
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Soma dos encargos incidentes sobre a NF: Imposto ({params.impostoFaturamentoPercent}%) + ISS ({params.issPercent}%) + Antecipação ({params.antecipacaoPercent}%) + Taxa Adm ({params.taxaAdministrativaPercent}%) + Comissão s/ NOTA ({params.comissaoVendedorPercent}%)
+                      </p>
+                    </div>
+
+                    {!calc.isEncargosValido ? (
+                      <div className="px-3 py-1.5 bg-red-100 border border-red-300 rounded text-xs font-bold text-red-700 flex items-center gap-1.5 shrink-0">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>Cálculo impedido (Encargos ≥ 100%)</span>
+                      </div>
+                    ) : (
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-slate-500 block">Fator Divisor (1 - Encargos)</span>
+                        <span className="text-xs font-bold font-mono text-emerald-700">
+                          {(1 - calc.encargosTotaisNotaDecimal).toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mensagem de erro caso encargos totais >= 100% */}
+                  {!calc.isEncargosValido && (
+                    <div className="mt-2.5 p-3 rounded-lg bg-red-100/90 border border-red-300 text-red-800 flex items-start gap-2.5 text-xs">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Atenção: Cálculo não permitido</span>
+                        {calc.encargosErrorMessage ||
+                          `Os Encargos Totais sobre a NOTA são iguais ou superiores a 100% (${calc.encargosTotaisNotaPercent.toFixed(2)}%). Reduza os percentuais de encargos nos Parâmetros do Orçamento para poder calcular o preço de venda.`}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1682,57 +1751,98 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <span className="text-xs font-bold text-slate-700">
-                  4.1 Taxas sobre Faturamento
+                  {calc.temDesconto ? '4.1 Encargos Totais sobre a NOTA' : '4.1 Taxas sobre Faturamento'}
                 </span>
                 <span className="text-[10px] text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded font-bold">
-                  Imposto + ISS + Antec.
+                  {calc.temDesconto ? '5 Encargos s/ NOTA' : 'Imposto + ISS + Antec.'}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                {params.impostoFaturamentoPercent}% + {params.issPercent}% + {params.antecipacaoPercent}%
+                {calc.temDesconto
+                  ? `${params.impostoFaturamentoPercent}% + ${params.issPercent}% + ${params.antecipacaoPercent}% + ${params.taxaAdministrativaPercent}% + ${params.comissaoVendedorPercent}%`
+                  : `${params.impostoFaturamentoPercent}% + ${params.issPercent}% + ${params.antecipacaoPercent}%`}
               </p>
-              <div className="text-lg font-bold text-slate-900 font-mono">
-                {calc.somaTaxasFaturamentoPercent.toFixed(2)}%
-                <span className="text-xs font-normal text-slate-500 ml-1.5">
-                  ({calc.somaTaxasFaturamentoDecimal.toFixed(4)})
-                </span>
+              <div className="text-lg font-bold font-mono">
+                {calc.temDesconto ? (
+                  <span className={calc.isEncargosValido ? 'text-slate-900' : 'text-red-600'}>
+                    {calc.encargosTotaisNotaPercent.toFixed(2)}%
+                    <span className="text-xs font-normal text-slate-500 ml-1.5">
+                      ({calc.encargosTotaisNotaDecimal.toFixed(4)})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-900">
+                    {calc.somaTaxasFaturamentoPercent.toFixed(2)}%
+                    <span className="text-xs font-normal text-slate-500 ml-1.5">
+                      ({calc.somaTaxasFaturamentoDecimal.toFixed(4)})
+                    </span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
+
+          {/* Banner de erro quando encargos >= 100% */}
+          {calc.temDesconto && !calc.isEncargosValido && (
+            <div className="mb-4 p-4 rounded-xl bg-red-100 border-2 border-red-300 text-red-800 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-sm block">Cálculo de Preço de Venda Impedido</span>
+                <p className="text-xs mt-0.5">
+                  {calc.encargosErrorMessage ||
+                    `Os Encargos Totais sobre a NOTA são iguais ou superiores a 100% (${calc.encargosTotaisNotaPercent.toFixed(2)}%). Reduza os percentuais de impostos, taxas ou comissão para viabilizar o cálculo.`}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Linha dos Fatores e Denominador */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">4.2 Fator</span>
+                <span className="text-xs font-bold text-slate-700">
+                  {calc.temDesconto ? '4.2 Fator Divisor da NOTA' : '4.2 Fator'}
+                </span>
                 <span className="text-[10px] text-slate-500">
-                  (1 - Taxa Adm) × (1 - Comissão)
+                  {calc.temDesconto ? '1 - Encargos Totais' : '(1 - Taxa Adm) × (1 - Comissão)'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                (1 - {(params.taxaAdministrativaPercent / 100).toFixed(2)}) × (1 - {(params.comissaoVendedorPercent / 100).toFixed(2)})
+                {calc.temDesconto
+                  ? `1 - ${calc.encargosTotaisNotaDecimal.toFixed(4)}`
+                  : `(1 - ${(params.taxaAdministrativaPercent / 100).toFixed(2)}) × (1 - ${(params.comissaoVendedorPercent / 100).toFixed(2)})`}
               </p>
               <div className="text-base font-bold text-slate-800 font-mono">
-                {calc.fator.toFixed(4)}
+                {calc.temDesconto
+                  ? (1 - calc.encargosTotaisNotaDecimal).toFixed(4)
+                  : calc.fator.toFixed(4)}
               </div>
             </div>
 
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">4.3 Denominador</span>
+                <span className="text-xs font-bold text-slate-700">
+                  {calc.temDesconto ? '4.3 Preço Final na NOTA' : '4.3 Denominador'}
+                </span>
                 <span className="text-[10px] text-slate-500">
-                  Fator - Taxas Faturamento
+                  {calc.temDesconto ? 'Preserva Lucro Desejado' : 'Fator - Taxas Faturamento'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                {calc.fator.toFixed(4)} - {calc.somaTaxasFaturamentoDecimal.toFixed(4)}
+                {calc.temDesconto
+                  ? `Base (${formatCurrencyBRL(calc.base)}) ÷ ${(1 - calc.encargosTotaisNotaDecimal).toFixed(4)}`
+                  : `${calc.fator.toFixed(4)} - ${calc.somaTaxasFaturamentoDecimal.toFixed(4)}`}
               </p>
               <div
                 className={`text-base font-bold font-mono ${
-                  calc.isDenominadorValido ? 'text-emerald-700' : 'text-red-600'
+                  calc.temDesconto
+                    ? calc.isEncargosValido ? 'text-emerald-700' : 'text-red-600'
+                    : calc.isDenominadorValido ? 'text-emerald-700' : 'text-red-600'
                 }`}
               >
-                {calc.denominador.toFixed(4)}
+                {calc.temDesconto
+                  ? formatCurrencyBRL(calc.valorFinalVendaComDesconto)
+                  : calc.denominador.toFixed(4)}
               </div>
             </div>
 
@@ -1748,12 +1858,12 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                   4.4 Valor Final da Venda
                 </span>
                 <span className="text-[10px] text-amber-800 bg-amber-200/80 px-1.5 py-0.5 rounded font-mono font-bold">
-                  Base ÷ Denominador
+                  {calc.temDesconto ? 'Preço Final ÷ (1 - Desc.)' : 'Base ÷ Denominador'}
                 </span>
               </div>
               <p className="text-[11px] text-amber-900/80">
                 {calc.temDesconto
-                  ? 'Valor de venda sem desconto (base faturada):'
+                  ? 'Preço de venda praticado (tabela / antes do desconto):'
                   : 'Valor que deverá ser faturado para garantir a Base desejada.'}
               </p>
               <div
@@ -2051,18 +2161,14 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
                     const itemLucro =
                       itemCustoTotal * ((params.margemLucroPercent || 0) / 100);
                     const itemBase = itemCustoTotal + itemLucro;
-                    const itemValorFinalVenda =
-                      calc.isDenominadorValido &&
-                      calc.denominador > 0 &&
-                      calc.base > 0
-                        ? itemBase / calc.denominador
-                        : 0;
+                    const itemProportion = calc.base > 0 ? itemBase / calc.base : 0;
+                    const itemValorFinalVenda = calc.valorFinalVenda * itemProportion;
                     const itemVendaUnit =
                       item.quantidade > 0
                         ? itemValorFinalVenda / item.quantidade
                         : 0;
                     const itemValorComDesconto = calc.temDesconto
-                      ? itemValorFinalVenda * (1 - calc.descontoPercent / 100)
+                      ? calc.valorFinalVendaComDesconto * itemProportion
                       : itemValorFinalVenda;
 
                     return (
