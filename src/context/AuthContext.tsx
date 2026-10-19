@@ -16,7 +16,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_SESSION_KEY = 'rn_precificacao_auth_session_v1';
+const SESSION_STORAGE_KEY = 'rn_precificacao_auth_session_v1';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -30,8 +30,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const checkSession = async () => {
       try {
-        // Clear old automatic demo session key
-        localStorage.removeItem('rn_precificacao_demo_session');
+        // Clear any old persistent session keys from localStorage
+        try {
+          localStorage.removeItem('rn_precificacao_auth_session_v1');
+          localStorage.removeItem('rn_precificacao_demo_session');
+          Object.keys(localStorage).forEach((k) => {
+            if (k.startsWith('sb-') || k.includes('supabase.auth')) {
+              localStorage.removeItem(k);
+            }
+          });
+        } catch {}
 
         if (isConfigured && supabase) {
           const { data, error } = await supabase.auth.getSession();
@@ -49,8 +57,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // Check local session persistence if not in Supabase or if Supabase session is empty
-        const cachedSessionUser = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY);
+        // Check active session in sessionStorage (cleared automatically when window/page is closed)
+        const cachedSessionUser = sessionStorage.getItem(SESSION_STORAGE_KEY);
         if (cachedSessionUser && isMounted) {
           try {
             const parsed = JSON.parse(cachedSessionUser);
@@ -58,10 +66,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(parsed);
               setSessionToken('auth-session-active');
             } else {
-              localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+              sessionStorage.removeItem(SESSION_STORAGE_KEY);
             }
           } catch {
-            localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+            sessionStorage.removeItem(SESSION_STORAGE_KEY);
           }
         }
       } catch (err) {
@@ -90,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSessionToken(session.access_token);
           } else {
             // User signed out in Supabase
-            if (!localStorage.getItem(LOCAL_STORAGE_SESSION_KEY)) {
+            if (!sessionStorage.getItem(SESSION_STORAGE_KEY)) {
               setUser(null);
               setSessionToken(null);
             }
@@ -133,7 +141,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: 'Administrador Geral',
             createdAt: new Date().toISOString(),
           };
-          localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(masterAdminUser));
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(masterAdminUser));
+          localStorage.removeItem('rn_precificacao_auth_session_v1');
           setUser(masterAdminUser);
           setSessionToken('master-admin-session');
           setIsLoading(false);
@@ -150,7 +159,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (loginRes.ok) {
             const loginData = await loginRes.json();
             if (loginData?.success && loginData?.user) {
-              localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(loginData.user));
+              sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(loginData.user));
+              localStorage.removeItem('rn_precificacao_auth_session_v1');
               setUser(loginData.user);
               setSessionToken('server-store-session');
               setIsLoading(false);
@@ -194,10 +204,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: managedUser.profiles?.name || 'Administrador Geral',
                 createdAt: managedUser.created_at || new Date().toISOString(),
               };
-              localStorage.setItem(
-                LOCAL_STORAGE_SESSION_KEY,
+              sessionStorage.setItem(
+                SESSION_STORAGE_KEY,
                 JSON.stringify(authenticatedManagedUser)
               );
+              localStorage.removeItem('rn_precificacao_auth_session_v1');
               setUser(authenticatedManagedUser);
               setSessionToken('managed-user-session');
               setIsLoading(false);
@@ -230,13 +241,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           if (data.user) {
-            setUser({
+            const supabaseUserProfile: UserProfile = {
               id: data.user.id,
               email: data.user.email || email,
               fullName: data.user.user_metadata?.full_name || email.split('@')[0],
               role: 'Administrador Geral',
               createdAt: data.user.created_at,
-            });
+            };
+            sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(supabaseUserProfile));
+            localStorage.removeItem('rn_precificacao_auth_session_v1');
+            setUser(supabaseUserProfile);
             setSessionToken(data.session?.access_token || 'active-session');
             setIsLoading(false);
             return { success: true };
@@ -270,7 +284,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                       : 'Orçamentista',
                   createdAt: matchedLocalUser.createdAt || new Date().toISOString(),
                 };
-                localStorage.setItem(LOCAL_STORAGE_SESSION_KEY, JSON.stringify(localUserData));
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localUserData));
+                localStorage.removeItem('rn_precificacao_auth_session_v1');
                 setUser(localUserData);
                 setSessionToken('auth-session-active');
                 setIsLoading(false);
@@ -314,8 +329,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Erro ao encerrar sessão no Supabase:', err);
     } finally {
-      localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY);
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem('rn_precificacao_auth_session_v1');
       localStorage.removeItem('rn_precificacao_demo_session');
+      try {
+        Object.keys(localStorage).forEach((k) => {
+          if (k.startsWith('sb-') || k.includes('supabase.auth')) {
+            localStorage.removeItem(k);
+          }
+        });
+      } catch {}
       setUser(null);
       setSessionToken(null);
       setIsLoading(false);

@@ -121,8 +121,8 @@ export const OrcamentosView: React.FC = () => {
               try {
                 const serverDefaults = {
                   ...FALLBACK_DEFAULT_PARAMS,
-                  ...(localDefaults || {}),
                   ...storeData.defaultParams,
+                  ...(localDefaults || {}),
                 };
                 localStorage.setItem(
                   'rn_precificacao_default_params_v1',
@@ -198,8 +198,8 @@ export const OrcamentosView: React.FC = () => {
                 } catch {}
                 const serverDefaults = {
                   ...FALLBACK_DEFAULT_PARAMS,
-                  ...(currentLocal || {}),
                   ...data.defaultParams,
+                  ...(currentLocal || {}),
                 };
                 localStorage.setItem(
                   'rn_precificacao_default_params_v1',

@@ -43,6 +43,7 @@ const getCleanSupabaseUrl = (raw: string) => {
 export let supabase: SupabaseClient | null = isSupabaseConfigured()
   ? createClient(getCleanSupabaseUrl(supabaseUrl), supabaseAnonKey, {
       auth: {
+        storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
@@ -62,6 +63,7 @@ export const getSupabaseClient = async (): Promise<SupabaseClient | null> => {
         if (isSupabaseConfigured()) {
           supabase = createClient(getCleanSupabaseUrl(supabaseUrl), supabaseAnonKey, {
             auth: {
+              storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
               persistSession: true,
               autoRefreshToken: true,
               detectSessionInUrl: true,

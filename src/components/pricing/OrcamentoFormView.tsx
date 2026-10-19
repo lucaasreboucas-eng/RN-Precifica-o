@@ -250,29 +250,29 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
           const currentLocal = loadSavedDefaultParams();
           const validDefaults: PricingParameters = {
             margemLucroPercent:
-              typeof remoteDefaults.margemLucroPercent === 'number'
-                ? remoteDefaults.margemLucroPercent
-                : currentLocal.margemLucroPercent,
+              typeof currentLocal.margemLucroPercent === 'number' && !isNaN(currentLocal.margemLucroPercent)
+                ? currentLocal.margemLucroPercent
+                : (typeof remoteDefaults.margemLucroPercent === 'number' ? remoteDefaults.margemLucroPercent : FALLBACK_DEFAULT_PARAMS.margemLucroPercent),
             impostoFaturamentoPercent:
-              typeof remoteDefaults.impostoFaturamentoPercent === 'number'
-                ? remoteDefaults.impostoFaturamentoPercent
-                : currentLocal.impostoFaturamentoPercent,
+              typeof currentLocal.impostoFaturamentoPercent === 'number' && !isNaN(currentLocal.impostoFaturamentoPercent)
+                ? currentLocal.impostoFaturamentoPercent
+                : (typeof remoteDefaults.impostoFaturamentoPercent === 'number' ? remoteDefaults.impostoFaturamentoPercent : FALLBACK_DEFAULT_PARAMS.impostoFaturamentoPercent),
             taxaAdministrativaPercent:
-              typeof remoteDefaults.taxaAdministrativaPercent === 'number'
-                ? remoteDefaults.taxaAdministrativaPercent
-                : currentLocal.taxaAdministrativaPercent,
+              typeof currentLocal.taxaAdministrativaPercent === 'number' && !isNaN(currentLocal.taxaAdministrativaPercent)
+                ? currentLocal.taxaAdministrativaPercent
+                : (typeof remoteDefaults.taxaAdministrativaPercent === 'number' ? remoteDefaults.taxaAdministrativaPercent : FALLBACK_DEFAULT_PARAMS.taxaAdministrativaPercent),
             comissaoVendedorPercent:
-              typeof remoteDefaults.comissaoVendedorPercent === 'number'
-                ? remoteDefaults.comissaoVendedorPercent
-                : currentLocal.comissaoVendedorPercent,
+              typeof currentLocal.comissaoVendedorPercent === 'number' && !isNaN(currentLocal.comissaoVendedorPercent)
+                ? currentLocal.comissaoVendedorPercent
+                : (typeof remoteDefaults.comissaoVendedorPercent === 'number' ? remoteDefaults.comissaoVendedorPercent : FALLBACK_DEFAULT_PARAMS.comissaoVendedorPercent),
             issPercent:
-              typeof remoteDefaults.issPercent === 'number'
-                ? remoteDefaults.issPercent
-                : currentLocal.issPercent,
+              typeof currentLocal.issPercent === 'number' && !isNaN(currentLocal.issPercent)
+                ? currentLocal.issPercent
+                : (typeof remoteDefaults.issPercent === 'number' ? remoteDefaults.issPercent : FALLBACK_DEFAULT_PARAMS.issPercent),
             antecipacaoPercent:
-              typeof remoteDefaults.antecipacaoPercent === 'number'
-                ? remoteDefaults.antecipacaoPercent
-                : currentLocal.antecipacaoPercent,
+              typeof currentLocal.antecipacaoPercent === 'number' && !isNaN(currentLocal.antecipacaoPercent)
+                ? currentLocal.antecipacaoPercent
+                : (typeof remoteDefaults.antecipacaoPercent === 'number' ? remoteDefaults.antecipacaoPercent : FALLBACK_DEFAULT_PARAMS.antecipacaoPercent),
           };
           setDefaultParams(validDefaults);
           try {
@@ -280,6 +280,11 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
           } catch {
             // ignore
           }
+          fetch('/api/store/default-params', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ defaultParams: validDefaults }),
+          }).catch(() => {});
           if (!initialOrcamento) {
             setParams((prev) => ({
               ...validDefaults,
@@ -1039,6 +1044,16 @@ export const OrcamentoFormView: React.FC<OrcamentoFormViewProps> = ({
       );
       return;
     }
+
+    const defaultsToPersist: PricingParameters = {
+      margemLucroPercent: validatedParams.margemLucroPercent,
+      impostoFaturamentoPercent: validatedParams.impostoFaturamentoPercent,
+      taxaAdministrativaPercent: validatedParams.taxaAdministrativaPercent,
+      comissaoVendedorPercent: validatedParams.comissaoVendedorPercent,
+      issPercent: validatedParams.issPercent,
+      antecipacaoPercent: validatedParams.antecipacaoPercent,
+    };
+    persistDefaultParams(defaultsToPersist);
 
     const orcamentoToSave: Orcamento = {
       id: initialOrcamento?.id || `orc-${Date.now()}`,
