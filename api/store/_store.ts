@@ -5,6 +5,7 @@ export interface ServerStoreData {
   profiles: any[];
   users: any[];
   orcamentos: any[];
+  deletedOrcamentoIds: string[];
   defaultParams: {
     margemLucroPercent: number;
     impostoFaturamentoPercent: number;
@@ -42,6 +43,7 @@ export const DEFAULT_STORE_DATA: ServerStoreData = {
     },
   ],
   orcamentos: [],
+  deletedOrcamentoIds: [],
   defaultParams: {
     margemLucroPercent: 30,
     impostoFaturamentoPercent: 6,
@@ -68,10 +70,16 @@ export function getGlobalStore(): ServerStoreData {
     if (fs.existsSync(DATA_FILE_PATH)) {
       const raw = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
+      const deletedOrcamentoIds = Array.isArray(parsed?.deletedOrcamentoIds)
+        ? parsed.deletedOrcamentoIds
+        : [];
+      const deletedSet = new Set(deletedOrcamentoIds);
+      const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
       globalThis.__globalServerStore = {
         profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : DEFAULT_STORE_DATA.profiles,
         users: Array.isArray(parsed?.users) ? parsed.users : DEFAULT_STORE_DATA.users,
-        orcamentos: Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [],
+        orcamentos: rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id)),
+        deletedOrcamentoIds,
         defaultParams: parsed?.defaultParams || DEFAULT_STORE_DATA.defaultParams,
       };
       return globalThis.__globalServerStore;
@@ -82,10 +90,16 @@ export function getGlobalStore(): ServerStoreData {
     if (fs.existsSync(BACKUP_FILE_PATH)) {
       const raw = fs.readFileSync(BACKUP_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
+      const deletedOrcamentoIds = Array.isArray(parsed?.deletedOrcamentoIds)
+        ? parsed.deletedOrcamentoIds
+        : [];
+      const deletedSet = new Set(deletedOrcamentoIds);
+      const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
       globalThis.__globalServerStore = {
         profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : DEFAULT_STORE_DATA.profiles,
         users: Array.isArray(parsed?.users) ? parsed.users : DEFAULT_STORE_DATA.users,
-        orcamentos: Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [],
+        orcamentos: rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id)),
+        deletedOrcamentoIds,
         defaultParams: parsed?.defaultParams || DEFAULT_STORE_DATA.defaultParams,
       };
       return globalThis.__globalServerStore;

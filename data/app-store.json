@@ -25,6 +25,7 @@
     }
   ],
   "orcamentos": [],
+  "deletedOrcamentoIds": [],
   "defaultParams": {
     "margemLucroPercent": 30,
     "impostoFaturamentoPercent": 6,

@@ -24,6 +24,27 @@ import { generateResumoOrcamentoPdf } from '../../utils/orcamentoPdfGenerator';
 import { OrcamentoPdfModal } from './OrcamentoPdfModal';
 
 const STORAGE_KEY = 'rn_precificacao_orcamentos_prod_v1';
+const DELETED_IDS_KEY = 'rn_precificacao_deleted_orcamentos_v1';
+
+const getLocalDeletedIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.filter((id) => typeof id === 'string' && id.trim().length > 0));
+      }
+    }
+  } catch {}
+  return new Set<string>();
+};
+
+const saveLocalDeletedIds = (ids: Set<string> | string[]) => {
+  try {
+    const arr = Array.from(ids);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(arr));
+  } catch {}
+};
 
 const FALLBACK_DEFAULT_PARAMS = {
   margemLucroPercent: 30,
@@ -45,8 +66,15 @@ export const OrcamentosView: React.FC = () => {
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>(() => {
     try {
       localStorage.removeItem('rn_precificacao_orcamentos_data_v2');
+      const deletedIds = getLocalDeletedIds();
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : INITIAL_ORCAMENTOS;
+      if (saved) {
+        const parsed: Orcamento[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((o) => o && o.id && !deletedIds.has(o.id));
+        }
+      }
+      return INITIAL_ORCAMENTOS;
     } catch {
       return INITIAL_ORCAMENTOS;
     }
@@ -76,11 +104,16 @@ export const OrcamentosView: React.FC = () => {
 
     const loadOrcamentos = async () => {
       try {
+        const deletedIds = getLocalDeletedIds();
+
         let localQuotes: Orcamento[] = [];
         try {
           const rawLocal = localStorage.getItem(STORAGE_KEY);
           if (rawLocal) {
-            localQuotes = JSON.parse(rawLocal);
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              localQuotes = parsed.filter((o: Orcamento) => o && o.id && !deletedIds.has(o.id));
+            }
           }
         } catch {
           localQuotes = [];
@@ -103,16 +136,34 @@ export const OrcamentosView: React.FC = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               orcamentos: localQuotes,
+              deletedOrcamentoIds: Array.from(deletedIds),
               defaultParams: localDefaults && typeof localDefaults === 'object' ? localDefaults : undefined,
             }),
           });
           if (syncRes.ok && isMounted) {
             const storeData = await syncRes.json();
+
+            if (Array.isArray(storeData.deletedOrcamentoIds)) {
+              let updated = false;
+              storeData.deletedOrcamentoIds.forEach((id: string) => {
+                if (typeof id === 'string' && id.trim() && !deletedIds.has(id)) {
+                  deletedIds.add(id);
+                  updated = true;
+                }
+              });
+              if (updated) {
+                saveLocalDeletedIds(deletedIds);
+              }
+            }
+
             if (Array.isArray(storeData.orcamentos)) {
-              // Merge server quotes with any local quotes not yet on server
-              const serverIds = new Set(storeData.orcamentos.map((o: any) => o.id));
-              const missingOnServer = localQuotes.filter((l) => !serverIds.has(l.id));
-              const merged = [...storeData.orcamentos, ...missingOnServer];
+              // Merge server quotes with any local quotes not yet on server, strictly excluding deleted quotes
+              const validServerQuotes: Orcamento[] = storeData.orcamentos.filter(
+                (o: any) => o && o.id && !deletedIds.has(o.id)
+              );
+              const serverIds = new Set(validServerQuotes.map((o: any) => o.id));
+              const missingOnServer = localQuotes.filter((l) => !serverIds.has(l.id) && !deletedIds.has(l.id));
+              const merged = [...validServerQuotes, ...missingOnServer];
               setOrcamentos(merged);
               localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
               localQuotes = merged;
@@ -144,33 +195,44 @@ export const OrcamentosView: React.FC = () => {
               .select('*')
               .order('created_at', { ascending: false });
 
-            if (!error && Array.isArray(data) && data.length > 0 && isMounted) {
-              const mappedRemote: Orcamento[] = data.map((row: any) => ({
-                id: row.id,
-                osNumber: row.os_number,
-                clientName: row.client_name,
-                date: row.date,
-                responsavel: row.responsavel,
-                createdByEmail: row.parametros?._createdByEmail || undefined,
-                createdByUserId: row.parametros?._createdByUserId || undefined,
-                status: row.status || 'Pendente',
-                parametros: row.parametros,
-                itens: Array.isArray(row.itens) ? row.itens : [],
-                totalValue: Number(row.total_value) || 0,
-                custoTotal: Number(row.custo_total) || 0,
-                base: Number(row.base) || 0,
-              }));
+            if (!error && Array.isArray(data) && isMounted) {
+              // Delete lingering rows in Supabase that are tombstoned
+              data.forEach((row: any) => {
+                if (row && row.id && deletedIds.has(row.id)) {
+                  Promise.resolve(client.from('orcamentos').delete().eq('id', row.id)).catch(() => {});
+                }
+              });
 
-              const remoteIds = new Set(mappedRemote.map((o) => o.id));
-              const unsyncedLocal = localQuotes.filter((q) => q.id && !remoteIds.has(q.id));
-              const merged = [...unsyncedLocal, ...mappedRemote];
-              setOrcamentos(merged);
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-              fetch('/api/store/orcamentos', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ orcamentos: merged }),
-              }).catch(() => {});
+              const validRemoteRows = data.filter((row: any) => row && row.id && !deletedIds.has(row.id));
+
+              if (validRemoteRows.length > 0 || data.length > 0) {
+                const mappedRemote: Orcamento[] = validRemoteRows.map((row: any) => ({
+                  id: row.id,
+                  osNumber: row.os_number,
+                  clientName: row.client_name,
+                  date: row.date,
+                  responsavel: row.responsavel,
+                  createdByEmail: row.parametros?._createdByEmail || undefined,
+                  createdByUserId: row.parametros?._createdByUserId || undefined,
+                  status: row.status || 'Pendente',
+                  parametros: row.parametros,
+                  itens: Array.isArray(row.itens) ? row.itens : [],
+                  totalValue: Number(row.total_value) || 0,
+                  custoTotal: Number(row.custo_total) || 0,
+                  base: Number(row.base) || 0,
+                }));
+
+                const remoteIds = new Set(mappedRemote.map((o) => o.id));
+                const unsyncedLocal = localQuotes.filter((q) => q.id && !remoteIds.has(q.id) && !deletedIds.has(q.id));
+                const merged = [...unsyncedLocal, ...mappedRemote];
+                setOrcamentos(merged);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+                fetch('/api/store/orcamentos', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ orcamentos: merged }),
+                }).catch(() => {});
+              }
             }
           }
         } catch (supErr) {
@@ -189,6 +251,20 @@ export const OrcamentosView: React.FC = () => {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data && isMounted) {
+            const deletedIds = getLocalDeletedIds();
+            if (Array.isArray(data.deletedOrcamentoIds)) {
+              let updated = false;
+              data.deletedOrcamentoIds.forEach((id: string) => {
+                if (typeof id === 'string' && id.trim() && !deletedIds.has(id)) {
+                  deletedIds.add(id);
+                  updated = true;
+                }
+              });
+              if (updated) {
+                saveLocalDeletedIds(deletedIds);
+              }
+            }
+
             if (data.defaultParams && typeof data.defaultParams === 'object') {
               try {
                 let currentLocal: any = {};
@@ -207,19 +283,24 @@ export const OrcamentosView: React.FC = () => {
                 );
               } catch {}
             }
+
             if (Array.isArray(data.orcamentos)) {
+              const freshServerQuotes: Orcamento[] = data.orcamentos.filter(
+                (o: any) => o && o.id && !deletedIds.has(o.id)
+              );
               setOrcamentos((prev) => {
-                const prevJson = JSON.stringify(prev);
-                const newJson = JSON.stringify(data.orcamentos);
+                const filteredPrev = prev.filter((p) => p && p.id && !deletedIds.has(p.id));
+                const prevJson = JSON.stringify(filteredPrev);
+                const serverIds = new Set(freshServerQuotes.map((o: any) => o.id));
+                // Retain only local items that aren't on server and are NOT deleted
+                const localOnly = filteredPrev.filter((p) => !serverIds.has(p.id) && !deletedIds.has(p.id));
+                const combined = [...freshServerQuotes, ...localOnly];
+                const newJson = JSON.stringify(combined);
                 if (prevJson !== newJson) {
-                  // If local had unsaved items, keep them
-                  const serverIds = new Set(data.orcamentos.map((o: any) => o.id));
-                  const localOnly = prev.filter((p) => !serverIds.has(p.id));
-                  const combined = [...data.orcamentos, ...localOnly];
                   localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
                   return combined;
                 }
-                return prev;
+                return filteredPrev;
               });
             }
           }
@@ -240,7 +321,9 @@ export const OrcamentosView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(orcamentos));
+    const deletedIds = getLocalDeletedIds();
+    const cleanOrcamentos = orcamentos.filter((o) => o && o.id && !deletedIds.has(o.id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanOrcamentos));
   }, [orcamentos]);
 
   const handleOpenCreate = () => {
@@ -254,6 +337,13 @@ export const OrcamentosView: React.FC = () => {
   };
 
   const handleSaveOrcamento = async (savedOrc: Orcamento) => {
+    // Unmark from deleted if re-saving
+    const deletedIds = getLocalDeletedIds();
+    if (deletedIds.has(savedOrc.id)) {
+      deletedIds.delete(savedOrc.id);
+      saveLocalDeletedIds(deletedIds);
+    }
+
     setOrcamentos((prev) => {
       const exists = prev.some((it) => it.id === savedOrc.id);
       const updated = exists
@@ -313,6 +403,13 @@ export const OrcamentosView: React.FC = () => {
   const handleDelete = async () => {
     if (!deletingOrcamento) return;
     const idToDelete = deletingOrcamento.id;
+
+    // 1. Mark in deleted IDs tombstone locally
+    const deletedIds = getLocalDeletedIds();
+    deletedIds.add(idToDelete);
+    saveLocalDeletedIds(deletedIds);
+
+    // 2. Immediately remove from local state & localStorage
     setOrcamentos((prev) => {
       const updated = prev.filter((item) => item.id !== idToDelete);
       try {
@@ -322,14 +419,29 @@ export const OrcamentosView: React.FC = () => {
     });
     setDeletingOrcamento(null);
 
+    // 3. Delete from Server Store with path param and payload for maximum endpoint resilience
     try {
       await fetch(`/api/store/orcamentos/${encodeURIComponent(idToDelete)}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: idToDelete }),
       });
     } catch (err) {
       console.error('Erro ao excluir orçamento no servidor:', err);
     }
 
+    // 4. Send tombstone update to sync endpoint
+    try {
+      await fetch('/api/store/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deletedOrcamentoIds: [idToDelete],
+        }),
+      });
+    } catch {}
+
+    // 5. Delete from Supabase
     try {
       const client = supabase || (await getSupabaseClient());
       if (client) {

@@ -14,7 +14,22 @@ export default function handler(req: any, res: any) {
   }
 
   const store = getGlobalStore();
-  const { profiles, users, orcamentos, defaultParams } = req.body || {};
+  const { profiles, users, orcamentos, defaultParams, deletedOrcamentoIds } = req.body || {};
+
+  if (!Array.isArray(store.deletedOrcamentoIds)) {
+    store.deletedOrcamentoIds = [];
+  }
+
+  if (Array.isArray(deletedOrcamentoIds)) {
+    for (const dId of deletedOrcamentoIds) {
+      if (dId && typeof dId === 'string' && !store.deletedOrcamentoIds.includes(dId)) {
+        store.deletedOrcamentoIds.push(dId);
+      }
+    }
+  }
+
+  const deletedSet = new Set(store.deletedOrcamentoIds);
+  store.orcamentos = store.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
 
   if (Array.isArray(profiles)) {
     const existingIds = new Set(store.profiles.map((p: any) => p.id));
@@ -58,7 +73,7 @@ export default function handler(req: any, res: any) {
   if (Array.isArray(orcamentos)) {
     const existingIds = new Set(store.orcamentos.map((o: any) => o.id));
     for (const o of orcamentos) {
-      if (o && o.id && !['orc-1', 'orc-2', 'orc-3'].includes(o.id)) {
+      if (o && o.id && !deletedSet.has(o.id) && !['orc-1', 'orc-2', 'orc-3'].includes(o.id)) {
         if (!existingIds.has(o.id)) {
           store.orcamentos.unshift(o);
           existingIds.add(o.id);

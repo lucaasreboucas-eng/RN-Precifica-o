@@ -17,6 +17,7 @@ interface ServerStoreData {
   profiles: any[];
   users: any[];
   orcamentos: any[];
+  deletedOrcamentoIds: string[];
   defaultParams: {
     margemLucroPercent: number;
     impostoFaturamentoPercent: number;
@@ -54,6 +55,7 @@ const DEFAULT_STORE_DATA: ServerStoreData = {
     },
   ],
   orcamentos: [],
+  deletedOrcamentoIds: [],
   defaultParams: {
     margemLucroPercent: 30,
     impostoFaturamentoPercent: 6,
@@ -85,10 +87,19 @@ function sanitizeStoreData(parsed: any): ServerStoreData {
     profiles.unshift(DEFAULT_STORE_DATA.profiles[0]);
   }
 
+  const deletedOrcamentoIds: string[] = Array.isArray(parsed?.deletedOrcamentoIds)
+    ? parsed.deletedOrcamentoIds
+    : [];
+  const deletedSet = new Set(deletedOrcamentoIds);
+
+  const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
+  const orcamentos = rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
+
   return {
     profiles,
     users,
-    orcamentos: Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [],
+    orcamentos,
+    deletedOrcamentoIds,
     defaultParams:
       parsed?.defaultParams && typeof parsed.defaultParams === 'object'
         ? { ...DEFAULT_STORE_DATA.defaultParams, ...parsed.defaultParams }
@@ -517,7 +528,23 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
 
   app.post('/api/store/sync', (req, res) => {
     const store = readStore();
-    const { profiles, users, orcamentos, defaultParams } = req.body || {};
+    const { profiles, users, orcamentos, defaultParams, deletedOrcamentoIds } = req.body || {};
+
+    if (!Array.isArray(store.deletedOrcamentoIds)) {
+      store.deletedOrcamentoIds = [];
+    }
+
+    if (Array.isArray(deletedOrcamentoIds)) {
+      for (const dId of deletedOrcamentoIds) {
+        if (dId && typeof dId === 'string' && !store.deletedOrcamentoIds.includes(dId)) {
+          store.deletedOrcamentoIds.push(dId);
+        }
+      }
+    }
+
+    const deletedSet = new Set(store.deletedOrcamentoIds);
+    // Guarantee that any orcamento whose ID was marked deleted is permanently removed
+    store.orcamentos = store.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
 
     if (Array.isArray(profiles)) {
       const existingIds = new Set(store.profiles.map((p: any) => p.id));
@@ -561,7 +588,7 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     if (Array.isArray(orcamentos)) {
       const existingIds = new Set(store.orcamentos.map((o: any) => o.id));
       for (const o of orcamentos) {
-        if (o && o.id && !['orc-1', 'orc-2', 'orc-3'].includes(o.id)) {
+        if (o && o.id && !deletedSet.has(o.id) && !['orc-1', 'orc-2', 'orc-3'].includes(o.id)) {
           if (!existingIds.has(o.id)) {
             store.orcamentos.unshift(o);
             existingIds.add(o.id);
@@ -605,17 +632,25 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
 
   app.put('/api/store/orcamentos', (req, res) => {
     const store = readStore();
+    const deletedSet = new Set(store.deletedOrcamentoIds || []);
     if (Array.isArray(req.body?.orcamentos)) {
-      store.orcamentos = req.body.orcamentos;
+      // Do not allow re-adding quotes that were deleted
+      store.orcamentos = req.body.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
       writeStore(store);
     }
-    res.json({ orcamentos: store.orcamentos });
+    res.json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   });
 
   app.post('/api/store/orcamentos', (req, res) => {
     const store = readStore();
     const orc = req.body?.orcamento;
     if (orc && orc.id) {
+      if (!Array.isArray(store.deletedOrcamentoIds)) {
+        store.deletedOrcamentoIds = [];
+      }
+      // If user explicitly saves/updates, remove from deleted IDs
+      store.deletedOrcamentoIds = store.deletedOrcamentoIds.filter((dId) => dId !== orc.id);
+
       const exists = store.orcamentos.some((it: any) => it.id === orc.id);
       if (exists) {
         store.orcamentos = store.orcamentos.map((it: any) =>
@@ -626,15 +661,33 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
       }
       writeStore(store);
     }
-    res.json({ orcamentos: store.orcamentos });
+    res.json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   });
 
-  app.delete('/api/store/orcamentos/:id', (req, res) => {
+  const performDeleteOrcamento = (id: string, res: express.Response) => {
     const store = readStore();
-    const { id } = req.params;
-    store.orcamentos = store.orcamentos.filter((it: any) => it.id !== id);
+    const cleanId = String(id || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ error: 'ID do orçamento não informado.' });
+    }
+    store.orcamentos = store.orcamentos.filter((it: any) => it.id !== cleanId);
+    if (!Array.isArray(store.deletedOrcamentoIds)) {
+      store.deletedOrcamentoIds = [];
+    }
+    if (!store.deletedOrcamentoIds.includes(cleanId)) {
+      store.deletedOrcamentoIds.push(cleanId);
+    }
     writeStore(store);
-    res.json({ orcamentos: store.orcamentos });
+    return res.json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds });
+  };
+
+  app.delete('/api/store/orcamentos/:id', (req, res) => {
+    performDeleteOrcamento(req.params.id, res);
+  });
+
+  app.delete('/api/store/orcamentos', (req, res) => {
+    const id = req.query?.id || req.body?.id;
+    performDeleteOrcamento(String(id || ''), res);
   });
 
   const handleUpdateDefaultParams = (req: express.Request, res: express.Response) => {

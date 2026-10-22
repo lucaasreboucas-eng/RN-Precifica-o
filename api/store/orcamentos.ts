@@ -12,12 +12,17 @@ export default function handler(req: any, res: any) {
   const store = getGlobalStore();
 
   if (req.method === 'GET') {
-    return res.status(200).json({ orcamentos: store.orcamentos });
+    return res.status(200).json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   }
 
   if (req.method === 'POST') {
     const orc = req.body?.orcamento;
     if (orc && orc.id) {
+      if (!Array.isArray(store.deletedOrcamentoIds)) {
+        store.deletedOrcamentoIds = [];
+      }
+      store.deletedOrcamentoIds = store.deletedOrcamentoIds.filter((dId) => dId !== orc.id);
+
       const exists = store.orcamentos.some((it: any) => it.id === orc.id);
       if (exists) {
         store.orcamentos = store.orcamentos.map((it: any) =>
@@ -28,24 +33,32 @@ export default function handler(req: any, res: any) {
       }
       saveGlobalStore(store);
     }
-    return res.status(200).json({ orcamentos: store.orcamentos });
+    return res.status(200).json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   }
 
   if (req.method === 'PUT') {
     if (Array.isArray(req.body?.orcamentos)) {
-      store.orcamentos = req.body.orcamentos;
+      const deletedSet = new Set(store.deletedOrcamentoIds || []);
+      store.orcamentos = req.body.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
       saveGlobalStore(store);
     }
-    return res.status(200).json({ orcamentos: store.orcamentos });
+    return res.status(200).json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   }
 
   if (req.method === 'DELETE') {
     const id = req.query?.id || req.body?.id;
     if (id) {
-      store.orcamentos = store.orcamentos.filter((it: any) => it.id !== id);
+      const cleanId = String(id).trim();
+      store.orcamentos = store.orcamentos.filter((it: any) => it.id !== cleanId);
+      if (!Array.isArray(store.deletedOrcamentoIds)) {
+        store.deletedOrcamentoIds = [];
+      }
+      if (!store.deletedOrcamentoIds.includes(cleanId)) {
+        store.deletedOrcamentoIds.push(cleanId);
+      }
       saveGlobalStore(store);
     }
-    return res.status(200).json({ orcamentos: store.orcamentos });
+    return res.status(200).json({ orcamentos: store.orcamentos, deletedOrcamentoIds: store.deletedOrcamentoIds || [] });
   }
 
   res.status(405).json({ error: 'Method not allowed' });
