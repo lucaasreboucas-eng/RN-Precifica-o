@@ -178,14 +178,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // continue to Supabase or local fallback if server request fails
         }
 
+        const resolveLocalProfileName = (profileId?: string): string | undefined => {
+          if (!profileId) return undefined;
+          try {
+            const rawProfiles = localStorage.getItem('rn_precificacao_profiles_prod_v1');
+            if (rawProfiles) {
+              const parsedProfiles = JSON.parse(rawProfiles);
+              if (Array.isArray(parsedProfiles)) {
+                const matched = parsedProfiles.find((p: any) => p && p.id === profileId);
+                if (matched?.name) return matched.name;
+              }
+            }
+          } catch {}
+          return profileId === 'perfil-admin' ? 'Administrador Geral' : undefined;
+        };
+
         // 3. Check Supabase managed_users table if configured
         const client = supabase || (await getSupabaseClient());
         if (client) {
-          const { data: managedUser } = await client
+          const { data: managedUsers } = await client
             .from('managed_users')
-            .select('*, profiles(name)')
+            .select('*')
             .ilike('email', cleanEmail)
-            .maybeSingle();
+            .limit(1);
+
+          const managedUser = Array.isArray(managedUsers) ? managedUsers[0] : null;
 
           if (managedUser) {
             if (managedUser.status === 'bloqueado') {
@@ -197,11 +214,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             if (managedUser.password && managedUser.password === password) {
+              let resolvedRole = resolveLocalProfileName(managedUser.profile_id);
+              if (!resolvedRole && managedUser.profile_id) {
+                try {
+                  const { data: profData } = await client
+                    .from('profiles')
+                    .select('name')
+                    .eq('id', managedUser.profile_id)
+                    .maybeSingle();
+                  if (profData?.name) resolvedRole = profData.name;
+                } catch {}
+              }
+
               const authenticatedManagedUser: UserProfile = {
                 id: managedUser.id,
                 email: managedUser.email,
                 fullName: managedUser.name,
-                role: managedUser.profiles?.name || 'Administrador Geral',
+                role: resolvedRole || 'Administrador Geral',
                 createdAt: managedUser.created_at || new Date().toISOString(),
               };
               sessionStorage.setItem(
@@ -213,13 +242,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setSessionToken('managed-user-session');
               setIsLoading(false);
               return { success: true };
-            } else {
-              setIsLoading(false);
-              return { success: false, error: 'E-mail ou senha incorretos.' };
             }
           }
+        }
 
-          // 3. Try Supabase Auth
+        // 4. Check local storage managed users (before falling back to Supabase Auth)
+        try {
+          const savedUsersRaw = localStorage.getItem('rn_precificacao_users_prod_v1');
+          if (savedUsersRaw) {
+            const savedUsers = JSON.parse(savedUsersRaw);
+            const matchedLocalUser = Array.isArray(savedUsers)
+              ? savedUsers.find(
+                  (u: any) => String(u?.email || '').trim().toLowerCase() === cleanEmail
+                )
+              : null;
+            if (matchedLocalUser) {
+              if (matchedLocalUser.status === 'bloqueado') {
+                setIsLoading(false);
+                return {
+                  success: false,
+                  error: 'Este usuário está bloqueado. Contate o administrador.',
+                };
+              }
+              if (matchedLocalUser.password && matchedLocalUser.password === password) {
+                const resolvedRole =
+                  resolveLocalProfileName(matchedLocalUser.profileId) || 'Usuário';
+
+                const localUserData: UserProfile = {
+                  id: matchedLocalUser.id,
+                  email: String(matchedLocalUser.email || '').trim(),
+                  fullName: matchedLocalUser.name,
+                  role: resolvedRole,
+                  createdAt: matchedLocalUser.createdAt || new Date().toISOString(),
+                };
+                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localUserData));
+                localStorage.removeItem('rn_precificacao_auth_session_v1');
+                setUser(localUserData);
+                setSessionToken('auth-session-active');
+
+                // Sync local users/profiles to backend store in background
+                try {
+                  const rawProfiles = localStorage.getItem('rn_precificacao_profiles_prod_v1');
+                  fetch('/api/store/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      users: savedUsers,
+                      profiles: rawProfiles ? JSON.parse(rawProfiles) : undefined,
+                    }),
+                  }).catch(() => {});
+                } catch {}
+
+                setIsLoading(false);
+                return { success: true };
+              } else {
+                setIsLoading(false);
+                return { success: false, error: 'E-mail ou senha incorretos.' };
+              }
+            }
+          }
+        } catch {
+          // ignore parse error
+        }
+
+        // 5. Try Supabase Auth if user was not found in managed_users or localStorage
+        if (client) {
           const { data, error } = await client.auth.signInWithPassword({
             email: email.trim(),
             password,
@@ -255,49 +342,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsLoading(false);
             return { success: true };
           }
-        }
-
-        // 4. Check local storage managed users
-        try {
-          const savedUsersRaw = localStorage.getItem('rn_precificacao_users_prod_v1');
-          if (savedUsersRaw) {
-            const savedUsers = JSON.parse(savedUsersRaw);
-            const matchedLocalUser = savedUsers.find(
-              (u: any) => u.email?.toLowerCase() === cleanEmail
-            );
-            if (matchedLocalUser) {
-              if (matchedLocalUser.status === 'bloqueado') {
-                setIsLoading(false);
-                return {
-                  success: false,
-                  error: 'Este usuário está bloqueado. Contate o administrador.',
-                };
-              }
-              if (matchedLocalUser.password && matchedLocalUser.password === password) {
-                const localUserData: UserProfile = {
-                  id: matchedLocalUser.id,
-                  email: matchedLocalUser.email,
-                  fullName: matchedLocalUser.name,
-                  role:
-                    matchedLocalUser.profileId === 'perfil-admin'
-                      ? 'Administrador Geral'
-                      : 'Orçamentista',
-                  createdAt: matchedLocalUser.createdAt || new Date().toISOString(),
-                };
-                sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(localUserData));
-                localStorage.removeItem('rn_precificacao_auth_session_v1');
-                setUser(localUserData);
-                setSessionToken('auth-session-active');
-                setIsLoading(false);
-                return { success: true };
-              } else {
-                setIsLoading(false);
-                return { success: false, error: 'E-mail ou senha incorretos.' };
-              }
-            }
-          }
-        } catch {
-          // ignore parse error
         }
 
         setIsLoading(false);

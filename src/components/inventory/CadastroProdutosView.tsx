@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Modal } from '../ui/Modal';
 import { Alert } from '../ui/Alert';
 import type { Produto } from '../../types/estoque';
+import { supabase, getSupabaseClient } from '../../lib/supabase';
 
 const STORAGE_KEY = 'rn_precificacao_produtos_prod_v1';
 const DELETED_IDS_KEY = 'rn_precificacao_deleted_produtos_v1';
@@ -116,7 +117,56 @@ export const CadastroProdutosView: React.FC = () => {
             const merged = [...validServerProdutos, ...missingOnServer];
             setProdutos(merged);
             localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+            localProdutos = merged;
           }
+        }
+
+        // Sincroniza com Supabase
+        try {
+          const client = await getSupabaseClient();
+          if (client) {
+            const { data, error } = await client
+              .from('produtos')
+              .select('*')
+              .order('created_at', { ascending: false });
+
+            if (!error && Array.isArray(data) && isMounted) {
+              data.forEach((row: any) => {
+                if (row && row.id && deletedIds.has(row.id)) {
+                  Promise.resolve(client.from('produtos').delete().eq('id', row.id)).catch(() => {});
+                }
+              });
+
+              const validRemoteRows = data.filter(
+                (row: any) => row && row.id && !deletedIds.has(row.id)
+              );
+
+              if (validRemoteRows.length > 0 || data.length > 0) {
+                const mappedRemote: Produto[] = validRemoteRows.map((row: any) => ({
+                  id: row.id,
+                  codigo: row.codigo,
+                  descricao: row.descricao,
+                  createdAt: row.created_at || new Date().toISOString(),
+                  updatedAt: row.updated_at || undefined,
+                }));
+
+                const remoteIds = new Set(mappedRemote.map((p) => p.id));
+                const unsyncedLocal = localProdutos.filter(
+                  (l) => l.id && !remoteIds.has(l.id) && !deletedIds.has(l.id)
+                );
+                const merged = [...unsyncedLocal, ...mappedRemote];
+                setProdutos(merged);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+                fetch('/api/store/produtos', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ produtos: merged }),
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch {
+          // Supabase opcional
         }
       } catch {
         // Persistência local já carregada
@@ -128,7 +178,7 @@ export const CadastroProdutosView: React.FC = () => {
     const intervalId = setInterval(() => {
       fetch('/api/store')
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
+        .then(async (data) => {
           if (data && isMounted) {
             const deletedIds = getLocalDeletedIds();
             if (Array.isArray(data.deletedProdutoIds)) {
@@ -164,14 +214,57 @@ export const CadastroProdutosView: React.FC = () => {
                 return filteredPrev;
               });
             }
+
+            // Atualiza também a partir do Supabase
+            try {
+              const client = await getSupabaseClient();
+              if (client && isMounted) {
+                const { data: remoteRows, error } = await client
+                  .from('produtos')
+                  .select('*')
+                  .order('created_at', { ascending: false });
+
+                if (!error && Array.isArray(remoteRows) && isMounted) {
+                  const mappedRemote: Produto[] = remoteRows
+                    .filter((row: any) => row && row.id && !deletedIds.has(row.id))
+                    .map((row: any) => ({
+                      id: row.id,
+                      codigo: row.codigo,
+                      descricao: row.descricao,
+                      createdAt: row.created_at || new Date().toISOString(),
+                      updatedAt: row.updated_at || undefined,
+                    }));
+
+                  setProdutos((prev) => {
+                    const filteredPrev = prev.filter((p) => p && p.id && !deletedIds.has(p.id));
+                    const remoteIds = new Set(mappedRemote.map((p) => p.id));
+                    const localOnly = filteredPrev.filter(
+                      (p) => !remoteIds.has(p.id) && !deletedIds.has(p.id)
+                    );
+                    const combined = [...localOnly, ...mappedRemote];
+                    if (JSON.stringify(filteredPrev) !== JSON.stringify(combined)) {
+                      localStorage.setItem(STORAGE_KEY, JSON.stringify(combined));
+                      return combined;
+                    }
+                    return filteredPrev;
+                  });
+                }
+              }
+            } catch {}
           }
         })
         .catch(() => {});
     }, 4000);
 
+    const onFocus = () => {
+      loadProdutos();
+    };
+    window.addEventListener('focus', onFocus);
+
     return () => {
       isMounted = false;
       clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
@@ -271,6 +364,21 @@ export const CadastroProdutosView: React.FC = () => {
       console.error('Erro ao salvar produto no servidor:', err);
     }
 
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('produtos').upsert({
+          id: produtoToSave.id,
+          codigo: produtoToSave.codigo,
+          descricao: produtoToSave.descricao,
+          created_at: produtoToSave.createdAt || now,
+          updated_at: produtoToSave.updatedAt || now,
+        });
+      }
+    } catch {
+      // Supabase opcional
+    }
+
     setFeedbackMessage(
       editingProduto
         ? `Produto "${produtoToSave.descricao}" atualizado com sucesso!`
@@ -315,6 +423,15 @@ export const CadastroProdutosView: React.FC = () => {
         }),
       });
     } catch {}
+
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('produtos').delete().eq('id', idToDelete);
+      }
+    } catch {
+      // Supabase opcional
+    }
 
     setFeedbackMessage('Produto excluído com sucesso.');
     setTimeout(() => setFeedbackMessage(null), 3000);

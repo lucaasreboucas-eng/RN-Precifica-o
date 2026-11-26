@@ -20,6 +20,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Modal } from '../ui/Modal';
 import { Alert } from '../ui/Alert';
 import type { Produto, Movimentacao, MovimentacaoItem } from '../../types/estoque';
+import { supabase, getSupabaseClient } from '../../lib/supabase';
 
 const MOV_STORAGE_KEY = 'rn_precificacao_movimentacoes_prod_v1';
 const DELETED_MOV_KEY = 'rn_precificacao_deleted_movimentacoes_v1';
@@ -228,6 +229,7 @@ export const MovimentacoesView: React.FC = () => {
             const merged = [...validServerMovs, ...missingOnServer];
             setMovimentacoes(merged);
             localStorage.setItem(MOV_STORAGE_KEY, JSON.stringify(merged));
+            localMovs = merged;
           }
 
           if (Array.isArray(storeData.produtos)) {
@@ -241,7 +243,96 @@ export const MovimentacoesView: React.FC = () => {
             const mergedProds = [...validServerProds, ...missingOnServer];
             setProdutosCadastrados(mergedProds);
             localStorage.setItem(PROD_STORAGE_KEY, JSON.stringify(mergedProds));
+            localProds = mergedProds;
           }
+        }
+
+        // Sincroniza movimentações e produtos com Supabase
+        try {
+          const client = await getSupabaseClient();
+          if (client) {
+            // 1. Produtos do Supabase
+            const { data: supProds, error: supProdsError } = await client
+              .from('produtos')
+              .select('*')
+              .order('created_at', { ascending: false });
+
+            if (!supProdsError && Array.isArray(supProds) && isMounted) {
+              const validRemoteProds = supProds.filter(
+                (row: any) => row && row.id && !deletedProdIds.has(row.id)
+              );
+
+              if (validRemoteProds.length > 0 || supProds.length > 0) {
+                const mappedProds: Produto[] = validRemoteProds.map((row: any) => ({
+                  id: row.id,
+                  codigo: row.codigo,
+                  descricao: row.descricao,
+                  createdAt: row.created_at || new Date().toISOString(),
+                  updatedAt: row.updated_at || undefined,
+                }));
+
+                const remoteProdIds = new Set(mappedProds.map((p) => p.id));
+                const unsyncedProds = localProds.filter(
+                  (l) => l.id && !remoteProdIds.has(l.id) && !deletedProdIds.has(l.id)
+                );
+                const mergedProds = [...unsyncedProds, ...mappedProds];
+                setProdutosCadastrados(mergedProds);
+                localStorage.setItem(PROD_STORAGE_KEY, JSON.stringify(mergedProds));
+                fetch('/api/store/produtos', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ produtos: mergedProds }),
+                }).catch(() => {});
+              }
+            }
+
+            // 2. Movimentações do Supabase
+            const { data: supMovs, error: supMovsError } = await client
+              .from('movimentacoes')
+              .select('*')
+              .order('data_hora', { ascending: false });
+
+            if (!supMovsError && Array.isArray(supMovs) && isMounted) {
+              supMovs.forEach((row: any) => {
+                if (row && row.id && deletedMovIds.has(row.id)) {
+                  Promise.resolve(client.from('movimentacoes').delete().eq('id', row.id)).catch(
+                    () => {}
+                  );
+                }
+              });
+
+              const validRemoteMovs = supMovs.filter(
+                (row: any) => row && row.id && !deletedMovIds.has(row.id)
+              );
+
+              if (validRemoteMovs.length > 0 || supMovs.length > 0) {
+                const mappedMovs: Movimentacao[] = validRemoteMovs.map((row: any) => ({
+                  id: row.id,
+                  dataHora: row.data_hora,
+                  itens: Array.isArray(row.itens) ? row.itens : [],
+                  placaVeiculo: row.placa_veiculo,
+                  modeloVeiculo: row.modelo_veiculo,
+                  responsavel: row.responsavel,
+                  updatedAt: row.updated_at || undefined,
+                }));
+
+                const remoteMovIds = new Set(mappedMovs.map((m) => m.id));
+                const unsyncedMovs = localMovs.filter(
+                  (l) => l.id && !remoteMovIds.has(l.id) && !deletedMovIds.has(l.id)
+                );
+                const mergedMovs = [...unsyncedMovs, ...mappedMovs];
+                setMovimentacoes(mergedMovs);
+                localStorage.setItem(MOV_STORAGE_KEY, JSON.stringify(mergedMovs));
+                fetch('/api/store/movimentacoes', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ movimentacoes: mergedMovs }),
+                }).catch(() => {});
+              }
+            }
+          }
+        } catch {
+          // Supabase opcional
         }
       } catch {
         // Persistência local já carregada
@@ -253,7 +344,7 @@ export const MovimentacoesView: React.FC = () => {
     const intervalId = setInterval(() => {
       fetch('/api/store')
         .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
+        .then(async (data) => {
           if (data && isMounted) {
             const deletedMovIds = getLocalDeletedSet(DELETED_MOV_KEY);
             if (Array.isArray(data.deletedMovimentacaoIds)) {
@@ -346,14 +437,94 @@ export const MovimentacoesView: React.FC = () => {
                 return prev;
               });
             }
+
+            // Atualiza movimentações e produtos diretamente do Supabase
+            try {
+              const client = await getSupabaseClient();
+              if (client && isMounted) {
+                const [{ data: supMovs, error: movErr }, { data: supProds, error: prodErr }] =
+                  await Promise.all([
+                    client
+                      .from('movimentacoes')
+                      .select('*')
+                      .order('data_hora', { ascending: false }),
+                    client
+                      .from('produtos')
+                      .select('*')
+                      .order('created_at', { ascending: false }),
+                  ]);
+
+                if (!movErr && Array.isArray(supMovs) && isMounted) {
+                  const mappedMovs: Movimentacao[] = supMovs
+                    .filter((row: any) => row && row.id && !deletedMovIds.has(row.id))
+                    .map((row: any) => ({
+                      id: row.id,
+                      dataHora: row.data_hora,
+                      itens: Array.isArray(row.itens) ? row.itens : [],
+                      placaVeiculo: row.placa_veiculo,
+                      modeloVeiculo: row.modelo_veiculo,
+                      responsavel: row.responsavel,
+                      updatedAt: row.updated_at || undefined,
+                    }));
+
+                  setMovimentacoes((prev) => {
+                    const filteredPrev = prev.filter((m) => m && m.id && !deletedMovIds.has(m.id));
+                    const remoteIds = new Set(mappedMovs.map((m) => m.id));
+                    const localOnly = filteredPrev.filter(
+                      (m) => !remoteIds.has(m.id) && !deletedMovIds.has(m.id)
+                    );
+                    const combined = [...localOnly, ...mappedMovs];
+                    if (JSON.stringify(filteredPrev) !== JSON.stringify(combined)) {
+                      localStorage.setItem(MOV_STORAGE_KEY, JSON.stringify(combined));
+                      return combined;
+                    }
+                    return filteredPrev;
+                  });
+                }
+
+                if (!prodErr && Array.isArray(supProds) && isMounted) {
+                  const mappedProds: Produto[] = supProds
+                    .filter((row: any) => row && row.id && !deletedProdIds.has(row.id))
+                    .map((row: any) => ({
+                      id: row.id,
+                      codigo: row.codigo,
+                      descricao: row.descricao,
+                      createdAt: row.created_at || new Date().toISOString(),
+                      updatedAt: row.updated_at || undefined,
+                    }));
+
+                  setProdutosCadastrados((prev) => {
+                    const filteredPrev = prev.filter((p) => p && p.id && !deletedProdIds.has(p.id));
+                    const remoteIds = new Set(mappedProds.map((p) => p.id));
+                    const localOnly = filteredPrev.filter(
+                      (p) => !remoteIds.has(p.id) && !deletedProdIds.has(p.id)
+                    );
+                    const combined = [...localOnly, ...mappedProds];
+                    if (JSON.stringify(filteredPrev) !== JSON.stringify(combined)) {
+                      try {
+                        localStorage.setItem(PROD_STORAGE_KEY, JSON.stringify(combined));
+                      } catch {}
+                      return combined;
+                    }
+                    return filteredPrev;
+                  });
+                }
+              }
+            } catch {}
           }
         })
         .catch(() => {});
     }, 4000);
 
+    const onFocus = () => {
+      loadData();
+    };
+    window.addEventListener('focus', onFocus);
+
     return () => {
       isMounted = false;
       clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
@@ -624,6 +795,23 @@ export const MovimentacoesView: React.FC = () => {
       console.error('Erro ao salvar movimentação no servidor:', err);
     }
 
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('movimentacoes').upsert({
+          id: movToSave.id,
+          data_hora: movToSave.dataHora,
+          itens: movToSave.itens,
+          placa_veiculo: movToSave.placaVeiculo,
+          modelo_veiculo: movToSave.modeloVeiculo,
+          responsavel: movToSave.responsavel,
+          updated_at: movToSave.updatedAt || now,
+        });
+      }
+    } catch {
+      // Supabase opcional
+    }
+
     setViewMode('list');
     setEditingMov(null);
     resetForm();
@@ -671,6 +859,15 @@ export const MovimentacoesView: React.FC = () => {
         }),
       });
     } catch {}
+
+    try {
+      const client = supabase || (await getSupabaseClient());
+      if (client) {
+        await client.from('movimentacoes').delete().eq('id', idToDelete);
+      }
+    } catch {
+      // Supabase opcional
+    }
 
     setFeedbackMessage('Movimentação excluída com sucesso.');
     setTimeout(() => setFeedbackMessage(null), 3000);

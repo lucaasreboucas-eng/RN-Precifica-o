@@ -251,12 +251,14 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         if (!usersError && usersData) {
           const remoteUserIds = new Set(usersData.map((r: any) => r.id));
-          const remoteEmails = new Set(usersData.map((r: any) => String(r.email).toLowerCase()));
+          const remoteEmails = new Set(
+            usersData.map((r: any) => String(r.email || '').trim().toLowerCase())
+          );
           const unsyncedUsers = localUsers.filter(
             (u) =>
               u.id &&
               !remoteUserIds.has(u.id) &&
-              !remoteEmails.has(u.email.toLowerCase()) &&
+              !remoteEmails.has(String(u.email || '').trim().toLowerCase()) &&
               !['user-1', 'user-2'].includes(u.id)
           );
 
@@ -338,14 +340,17 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
-      const { error } = await client.from('profiles').insert({
-        id: newProfile.id,
-        name: newProfile.name,
-        description: newProfile.description,
-        permissions: newProfile.permissions,
-        is_system: false,
-        created_at: newProfile.createdAt,
-      });
+      const { error } = await client.from('profiles').upsert(
+        {
+          id: newProfile.id,
+          name: newProfile.name,
+          description: newProfile.description,
+          permissions: newProfile.permissions,
+          is_system: false,
+          created_at: newProfile.createdAt,
+        },
+        { onConflict: 'id' }
+      );
       if (error) console.error('Erro ao salvar perfil no Supabase:', error.message);
     }
   };
@@ -507,6 +512,7 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const addUser = async (userData: Omit<ManagedUser, 'id' | 'createdAt'>) => {
     const newUser: ManagedUser = {
       ...userData,
+      email: userData.email.trim(),
       id: `user-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
@@ -518,15 +524,33 @@ export const ManagementProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const client = supabase || (await getSupabaseClient());
     if (client) {
-      const { error } = await client.from('managed_users').insert({
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        password: newUser.password || null,
-        profile_id: newUser.profileId,
-        status: newUser.status,
-        created_at: newUser.createdAt,
-      });
+      const assignedProfile = profiles.find((p) => p.id === newUser.profileId);
+      if (assignedProfile) {
+        await client.from('profiles').upsert(
+          {
+            id: assignedProfile.id,
+            name: assignedProfile.name,
+            description: assignedProfile.description || '',
+            permissions: assignedProfile.permissions || [],
+            is_system: Boolean(assignedProfile.isSystem),
+            created_at: assignedProfile.createdAt || new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      }
+
+      const { error } = await client.from('managed_users').upsert(
+        {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          password: newUser.password || null,
+          profile_id: newUser.profileId,
+          status: newUser.status,
+          created_at: newUser.createdAt,
+        },
+        { onConflict: 'id' }
+      );
       if (error) console.error('Erro ao salvar usuário no Supabase:', error.message);
     }
   };

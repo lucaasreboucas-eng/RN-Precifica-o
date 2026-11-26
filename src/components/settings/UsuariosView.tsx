@@ -71,7 +71,8 @@ export const UsuariosView: React.FC = () => {
       return;
     }
 
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setFormError('Informe um e-mail válido.');
       return;
     }
@@ -88,7 +89,8 @@ export const UsuariosView: React.FC = () => {
 
     // Check duplicate email
     const emailExists = users.some(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.id !== editingUser?.id
+      (u) =>
+        u.email.trim().toLowerCase() === trimmedEmail.toLowerCase() && u.id !== editingUser?.id
     );
 
     if (emailExists) {

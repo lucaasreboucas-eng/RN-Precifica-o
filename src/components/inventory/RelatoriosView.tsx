@@ -16,6 +16,7 @@ import { Alert } from '../ui/Alert';
 import type { Movimentacao } from '../../types/estoque';
 import { generateRelatorioMovimentacoesPdf } from '../../utils/movimentacoesPdfGenerator';
 import { RelatorioPdfModal } from './RelatorioPdfModal';
+import { getSupabaseClient } from '../../lib/supabase';
 
 const MOV_STORAGE_KEY = 'rn_precificacao_movimentacoes_prod_v1';
 const DELETED_MOV_KEY = 'rn_precificacao_deleted_movimentacoes_v1';
@@ -98,39 +99,82 @@ export const RelatoriosView: React.FC = () => {
     count: number;
   } | null>(null);
 
-  // Carrega movimentações atualizadas do servidor e localStorage (somente leitura)
+  // Carrega movimentações atualizadas do servidor, Supabase e localStorage (somente leitura)
   useEffect(() => {
     let isMounted = true;
 
     const loadMovimentacoes = async () => {
       try {
         const deletedIds = getLocalDeletedIds();
-        const res = await fetch('/api/store');
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          if (Array.isArray(data.deletedMovimentacaoIds)) {
-            data.deletedMovimentacaoIds.forEach((id: string) => {
-              if (typeof id === 'string' && id.trim()) deletedIds.add(id);
-            });
-          }
 
-          let localMovs: Movimentacao[] = [];
-          try {
-            const rawLocal = localStorage.getItem(MOV_STORAGE_KEY);
-            if (rawLocal) {
-              const parsed = JSON.parse(rawLocal);
-              if (Array.isArray(parsed)) {
-                localMovs = parsed.filter((m: Movimentacao) => m && m.id && !deletedIds.has(m.id));
+        let localMovs: Movimentacao[] = [];
+        try {
+          const rawLocal = localStorage.getItem(MOV_STORAGE_KEY);
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              localMovs = parsed.filter((m: Movimentacao) => m && m.id && !deletedIds.has(m.id));
+            }
+          }
+        } catch {}
+
+        try {
+          const res = await fetch('/api/store');
+          if (res.ok && isMounted) {
+            const data = await res.json();
+            if (Array.isArray(data.deletedMovimentacaoIds)) {
+              data.deletedMovimentacaoIds.forEach((id: string) => {
+                if (typeof id === 'string' && id.trim()) deletedIds.add(id);
+              });
+            }
+
+            const serverMovs: Movimentacao[] = Array.isArray(data.movimentacoes)
+              ? data.movimentacoes.filter((m: any) => m && m.id && !deletedIds.has(m.id))
+              : [];
+            const serverIds = new Set(serverMovs.map((m) => m.id));
+            const localOnly = localMovs.filter((m) => !serverIds.has(m.id));
+            const merged = [...serverMovs, ...localOnly];
+            setMovimentacoes(merged);
+            localMovs = merged;
+          }
+        } catch {}
+
+        // Consulta também a tabela movimentacoes no Supabase (somente leitura)
+        try {
+          const client = await getSupabaseClient();
+          if (client && isMounted) {
+            const { data: supMovs, error } = await client
+              .from('movimentacoes')
+              .select('*')
+              .order('data_hora', { ascending: false });
+
+            if (!error && Array.isArray(supMovs) && isMounted) {
+              const mappedRemote: Movimentacao[] = supMovs
+                .filter((row: any) => row && row.id && !deletedIds.has(row.id))
+                .map((row: any) => ({
+                  id: row.id,
+                  dataHora: row.data_hora,
+                  itens: Array.isArray(row.itens) ? row.itens : [],
+                  placaVeiculo: row.placa_veiculo,
+                  modeloVeiculo: row.modelo_veiculo,
+                  responsavel: row.responsavel,
+                  updatedAt: row.updated_at || undefined,
+                }));
+
+              if (mappedRemote.length > 0 || supMovs.length > 0) {
+                const remoteIds = new Set(mappedRemote.map((m) => m.id));
+                const localOnly = localMovs.filter(
+                  (m) => m.id && !remoteIds.has(m.id) && !deletedIds.has(m.id)
+                );
+                const merged = [...localOnly, ...mappedRemote];
+                setMovimentacoes((prev) =>
+                  JSON.stringify(prev) !== JSON.stringify(merged) ? merged : prev
+                );
               }
             }
-          } catch {}
-
-          const serverMovs: Movimentacao[] = Array.isArray(data.movimentacoes)
-            ? data.movimentacoes.filter((m: any) => m && m.id && !deletedIds.has(m.id))
-            : [];
-          const serverIds = new Set(serverMovs.map((m) => m.id));
-          const localOnly = localMovs.filter((m) => !serverIds.has(m.id));
-          setMovimentacoes([...serverMovs, ...localOnly]);
+          }
+        } catch {
+          // Supabase opcional
         }
       } catch {
         // Mantém dados carregados do localStorage
@@ -140,9 +184,15 @@ export const RelatoriosView: React.FC = () => {
     loadMovimentacoes();
 
     const intervalId = setInterval(loadMovimentacoes, 5000);
+    const onFocus = () => {
+      loadMovimentacoes();
+    };
+    window.addEventListener('focus', onFocus);
+
     return () => {
       isMounted = false;
       clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
