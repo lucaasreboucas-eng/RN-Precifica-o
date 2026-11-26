@@ -13,6 +13,7 @@ import {
   X,
   Check,
   FilterX,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
@@ -136,11 +137,12 @@ export const MovimentacoesView: React.FC = () => {
   const [placaVeiculo, setPlacaVeiculo] = useState('');
   const [modeloVeiculo, setModeloVeiculo] = useState('');
   const [responsavel, setResponsavel] = useState('');
+  const [mecanico, setMecanico] = useState('');
+  const [quemPegou, setQuemPegou] = useState<'vendedor' | 'mecanico' | ''>('');
   const [formErrors, setFormErrors] = useState<{
     itens?: string;
     placaVeiculo?: string;
     modeloVeiculo?: string;
-    responsavel?: string;
     general?: string;
   }>({});
 
@@ -306,6 +308,7 @@ export const MovimentacoesView: React.FC = () => {
               );
 
               if (validRemoteMovs.length > 0 || supMovs.length > 0) {
+                const localMap = new Map(localMovs.map((m) => [m.id, m]));
                 const mappedMovs: Movimentacao[] = validRemoteMovs.map((row: any) => ({
                   id: row.id,
                   dataHora: row.data_hora,
@@ -313,6 +316,8 @@ export const MovimentacoesView: React.FC = () => {
                   placaVeiculo: row.placa_veiculo,
                   modeloVeiculo: row.modelo_veiculo,
                   responsavel: row.responsavel,
+                  mecanico: row.mecanico ?? localMap.get(row.id)?.mecanico,
+                  quemPegou: row.quem_pegou ?? localMap.get(row.id)?.quemPegou,
                   updatedAt: row.updated_at || undefined,
                 }));
 
@@ -469,11 +474,17 @@ export const MovimentacoesView: React.FC = () => {
 
                   setMovimentacoes((prev) => {
                     const filteredPrev = prev.filter((m) => m && m.id && !deletedMovIds.has(m.id));
-                    const remoteIds = new Set(mappedMovs.map((m) => m.id));
+                    const prevMap = new Map(filteredPrev.map((m) => [m.id, m]));
+                    const hydratedMappedMovs = mappedMovs.map((m) => ({
+                      ...m,
+                      mecanico: m.mecanico ?? prevMap.get(m.id)?.mecanico,
+                      quemPegou: m.quemPegou ?? prevMap.get(m.id)?.quemPegou,
+                    }));
+                    const remoteIds = new Set(hydratedMappedMovs.map((m) => m.id));
                     const localOnly = filteredPrev.filter(
                       (m) => !remoteIds.has(m.id) && !deletedMovIds.has(m.id)
                     );
-                    const combined = [...localOnly, ...mappedMovs];
+                    const combined = [...localOnly, ...hydratedMappedMovs];
                     if (JSON.stringify(filteredPrev) !== JSON.stringify(combined)) {
                       localStorage.setItem(MOV_STORAGE_KEY, JSON.stringify(combined));
                       return combined;
@@ -565,6 +576,8 @@ export const MovimentacoesView: React.FC = () => {
     setPlacaVeiculo('');
     setModeloVeiculo('');
     setResponsavel('');
+    setMecanico('');
+    setQuemPegou('');
     setFormErrors({});
   };
 
@@ -587,6 +600,8 @@ export const MovimentacoesView: React.FC = () => {
     setPlacaVeiculo(mov.placaVeiculo);
     setModeloVeiculo(mov.modeloVeiculo);
     setResponsavel(mov.responsavel);
+    setMecanico(mov.mecanico || '');
+    setQuemPegou(mov.quemPegou || '');
     setFormErrors({});
     setViewMode('form');
   };
@@ -729,15 +744,13 @@ export const MovimentacoesView: React.FC = () => {
     const cleanPlaca = placaVeiculo.trim().toUpperCase();
     const cleanModelo = modeloVeiculo.trim();
     const cleanResponsavel = responsavel.trim();
+    const cleanMecanico = mecanico.trim();
 
     if (!cleanPlaca) {
       errors.placaVeiculo = 'Informe a placa do veículo.';
     }
     if (!cleanModelo) {
       errors.modeloVeiculo = 'Informe o modelo do veículo.';
-    }
-    if (!cleanResponsavel) {
-      errors.responsavel = 'Informe o responsável pela retirada.';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -756,6 +769,8 @@ export const MovimentacoesView: React.FC = () => {
           placaVeiculo: cleanPlaca,
           modeloVeiculo: cleanModelo,
           responsavel: cleanResponsavel,
+          mecanico: cleanMecanico,
+          quemPegou,
           updatedAt: now,
         }
       : {
@@ -765,6 +780,8 @@ export const MovimentacoesView: React.FC = () => {
           placaVeiculo: cleanPlaca,
           modeloVeiculo: cleanModelo,
           responsavel: cleanResponsavel,
+          mecanico: cleanMecanico,
+          quemPegou,
           updatedAt: now,
         };
 
@@ -1224,8 +1241,8 @@ export const MovimentacoesView: React.FC = () => {
               </CardTitle>
             </CardHeader>
 
-            <CardContent className="pt-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CardContent className="pt-5 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Input
                   label="Placa do Veículo"
                   placeholder="Ex: ABC-1D23"
@@ -1263,22 +1280,65 @@ export const MovimentacoesView: React.FC = () => {
                 />
 
                 <Input
-                  label="Responsável pela Retirada"
-                  placeholder="Nome completo de quem está retirando"
+                  label="Vendedor (opcional)"
+                  placeholder="Nome do vendedor"
                   value={responsavel}
-                  onChange={(e) => {
-                    setResponsavel(e.target.value);
-                    if (formErrors.responsavel) {
-                      setFormErrors((prev) => ({
-                        ...prev,
-                        responsavel: undefined,
-                        general: undefined,
-                      }));
-                    }
-                  }}
-                  error={formErrors.responsavel}
-                  required
+                  onChange={(e) => setResponsavel(e.target.value)}
                 />
+
+                <Input
+                  label="Mecânico (opcional)"
+                  placeholder="Nome do mecânico"
+                  value={mecanico}
+                  onChange={(e) => setMecanico(e.target.value)}
+                />
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Quem realmente pegou a peça? <span className="font-normal text-slate-400">(opcional)</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Identifique se a retirada foi feita pelo vendedor ou pelo mecânico.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuemPegou((prev) => (prev === 'vendedor' ? '' : 'vendedor'))
+                      }
+                      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                        quemPegou === 'vendedor'
+                          ? 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <User className="w-3.5 h-3.5" />
+                      <span>Vendedor</span>
+                      {quemPegou === 'vendedor' && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setQuemPegou((prev) => (prev === 'mecanico' ? '' : 'mecanico'))
+                      }
+                      className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                        quemPegou === 'mecanico'
+                          ? 'bg-amber-50 border-amber-500 text-amber-800 ring-2 ring-amber-500/20'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Mecânico</span>
+                      {quemPegou === 'mecanico' && <Check className="w-3.5 h-3.5 text-amber-600" />}
+                    </button>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

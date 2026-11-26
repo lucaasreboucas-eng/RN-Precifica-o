@@ -20,5 +20,7 @@ export interface Movimentacao {
   placaVeiculo: string;
   modeloVeiculo: string;
   responsavel: string;
+  mecanico?: string;
+  quemPegou?: 'vendedor' | 'mecanico' | '';
   updatedAt?: string;
 }
