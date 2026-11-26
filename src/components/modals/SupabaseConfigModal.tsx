@@ -20,7 +20,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Status da Integração Supabase"
-      description="Gerenciamento de banco de dados e autenticação segura para o RN Precificação."
+      description="Gerenciamento de banco de dados e autenticação segura para o RN Manutenção de Frota."
       maxWidth="lg"
     >
       <div className="space-y-4">

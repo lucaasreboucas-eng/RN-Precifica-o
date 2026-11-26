@@ -5,6 +5,9 @@ import {
   Settings,
   BadgeDollarSign,
   FileText,
+  Package,
+  ArrowLeftRight,
+  BarChart3,
   Plus,
   Edit2,
   Trash2,
@@ -26,6 +29,14 @@ const getTabIcon = (tabId: string) => {
       return <BadgeDollarSign className="w-4 h-4 text-amber-600" />;
     case 'gestao-precos-orcamentos':
       return <FileText className="w-3.5 h-3.5" />;
+    case 'gestao-estoque':
+      return <Package className="w-4 h-4 text-amber-600" />;
+    case 'gestao-estoque-produtos':
+      return <Package className="w-3.5 h-3.5" />;
+    case 'gestao-estoque-movimentacoes':
+      return <ArrowLeftRight className="w-3.5 h-3.5" />;
+    case 'gestao-estoque-relatorios':
+      return <BarChart3 className="w-3.5 h-3.5" />;
     case 'configuracoes':
       return <Settings className="w-4 h-4 text-slate-600" />;
     case 'configuracoes-perfis':

@@ -28,6 +28,24 @@ export const SIDEBAR_STRUCTURE: SidebarMainTab[] = [
       },
     ],
   },
+  {
+    id: 'gestao-estoque',
+    name: 'Gestão de Estoque',
+    subTabs: [
+      {
+        id: 'gestao-estoque-produtos',
+        name: 'Cadastro de Produtos',
+      },
+      {
+        id: 'gestao-estoque-movimentacoes',
+        name: 'Movimentações',
+      },
+      {
+        id: 'gestao-estoque-relatorios',
+        name: 'Relatórios',
+      },
+    ],
+  },
 ];
 
 const INITIAL_PROFILES: ProfileRole[] = [

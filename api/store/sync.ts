@@ -14,7 +14,17 @@ export default function handler(req: any, res: any) {
   }
 
   const store = getGlobalStore();
-  const { profiles, users, orcamentos, defaultParams, deletedOrcamentoIds } = req.body || {};
+  const {
+    profiles,
+    users,
+    orcamentos,
+    defaultParams,
+    deletedOrcamentoIds,
+    produtos,
+    deletedProdutoIds,
+    movimentacoes,
+    deletedMovimentacaoIds,
+  } = req.body || {};
 
   if (!Array.isArray(store.deletedOrcamentoIds)) {
     store.deletedOrcamentoIds = [];
@@ -30,6 +40,42 @@ export default function handler(req: any, res: any) {
 
   const deletedSet = new Set(store.deletedOrcamentoIds);
   store.orcamentos = store.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
+
+  if (!Array.isArray(store.produtos)) {
+    store.produtos = [];
+  }
+  if (!Array.isArray(store.deletedProdutoIds)) {
+    store.deletedProdutoIds = [];
+  }
+
+  if (Array.isArray(deletedProdutoIds)) {
+    for (const dId of deletedProdutoIds) {
+      if (dId && typeof dId === 'string' && !store.deletedProdutoIds.includes(dId)) {
+        store.deletedProdutoIds.push(dId);
+      }
+    }
+  }
+
+  const deletedProdSet = new Set(store.deletedProdutoIds);
+  store.produtos = store.produtos.filter((p: any) => p && p.id && !deletedProdSet.has(p.id));
+
+  if (!Array.isArray(store.movimentacoes)) {
+    store.movimentacoes = [];
+  }
+  if (!Array.isArray(store.deletedMovimentacaoIds)) {
+    store.deletedMovimentacaoIds = [];
+  }
+
+  if (Array.isArray(deletedMovimentacaoIds)) {
+    for (const dId of deletedMovimentacaoIds) {
+      if (dId && typeof dId === 'string' && !store.deletedMovimentacaoIds.includes(dId)) {
+        store.deletedMovimentacaoIds.push(dId);
+      }
+    }
+  }
+
+  const deletedMovSet = new Set(store.deletedMovimentacaoIds);
+  store.movimentacoes = store.movimentacoes.filter((m: any) => m && m.id && !deletedMovSet.has(m.id));
 
   if (Array.isArray(profiles)) {
     const existingIds = new Set(store.profiles.map((p: any) => p.id));
@@ -80,6 +126,38 @@ export default function handler(req: any, res: any) {
         } else {
           store.orcamentos = store.orcamentos.map((item: any) =>
             item.id === o.id ? { ...item, ...o } : item
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(produtos)) {
+    const existingProdIds = new Set(store.produtos.map((p: any) => p.id));
+    for (const p of produtos) {
+      if (p && p.id && !deletedProdSet.has(p.id)) {
+        if (!existingProdIds.has(p.id)) {
+          store.produtos.unshift(p);
+          existingProdIds.add(p.id);
+        } else {
+          store.produtos = store.produtos.map((item: any) =>
+            item.id === p.id ? { ...item, ...p } : item
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(movimentacoes)) {
+    const existingMovIds = new Set(store.movimentacoes.map((m: any) => m.id));
+    for (const m of movimentacoes) {
+      if (m && m.id && !deletedMovSet.has(m.id)) {
+        if (!existingMovIds.has(m.id)) {
+          store.movimentacoes.unshift(m);
+          existingMovIds.add(m.id);
+        } else {
+          store.movimentacoes = store.movimentacoes.map((item: any) =>
+            item.id === m.id ? { ...item, ...m } : item
           );
         }
       }

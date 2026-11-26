@@ -42,7 +42,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenSupabaseModa
             Olá, <span className="text-gold-gradient">{user?.fullName || 'Gestor'}</span>!
           </h2>
           <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">
-            Bem-vindo à base do sistema <strong className="text-white">RN Precificação</strong>. A infraestrutura de autenticação, design system e arquitetura de módulos estão prontas para expansão.
+            Bem-vindo à base do sistema <strong className="text-white">RN Manutenção de Frota</strong>. A infraestrutura de autenticação, design system e arquitetura de módulos estão prontas para expansão.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 mt-5">

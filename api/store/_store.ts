@@ -6,6 +6,10 @@ export interface ServerStoreData {
   users: any[];
   orcamentos: any[];
   deletedOrcamentoIds: string[];
+  produtos: any[];
+  deletedProdutoIds: string[];
+  movimentacoes: any[];
+  deletedMovimentacaoIds: string[];
   defaultParams: {
     margemLucroPercent: number;
     impostoFaturamentoPercent: number;
@@ -44,6 +48,10 @@ export const DEFAULT_STORE_DATA: ServerStoreData = {
   ],
   orcamentos: [],
   deletedOrcamentoIds: [],
+  produtos: [],
+  deletedProdutoIds: [],
+  movimentacoes: [],
+  deletedMovimentacaoIds: [],
   defaultParams: {
     margemLucroPercent: 30,
     impostoFaturamentoPercent: 6,
@@ -66,22 +74,43 @@ export function getGlobalStore(): ServerStoreData {
     return globalThis.__globalServerStore;
   }
 
+  const buildFromParsed = (parsed: any): ServerStoreData => {
+    const deletedOrcamentoIds = Array.isArray(parsed?.deletedOrcamentoIds)
+      ? parsed.deletedOrcamentoIds
+      : [];
+    const deletedOrcSet = new Set(deletedOrcamentoIds);
+    const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
+
+    const deletedProdutoIds = Array.isArray(parsed?.deletedProdutoIds)
+      ? parsed.deletedProdutoIds
+      : [];
+    const deletedProdSet = new Set(deletedProdutoIds);
+    const rawProdutos = Array.isArray(parsed?.produtos) ? parsed.produtos : [];
+
+    const deletedMovimentacaoIds = Array.isArray(parsed?.deletedMovimentacaoIds)
+      ? parsed.deletedMovimentacaoIds
+      : [];
+    const deletedMovSet = new Set(deletedMovimentacaoIds);
+    const rawMovimentacoes = Array.isArray(parsed?.movimentacoes) ? parsed.movimentacoes : [];
+
+    return {
+      profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : DEFAULT_STORE_DATA.profiles,
+      users: Array.isArray(parsed?.users) ? parsed.users : DEFAULT_STORE_DATA.users,
+      orcamentos: rawOrcamentos.filter((o: any) => o && o.id && !deletedOrcSet.has(o.id)),
+      deletedOrcamentoIds,
+      produtos: rawProdutos.filter((p: any) => p && p.id && !deletedProdSet.has(p.id)),
+      deletedProdutoIds,
+      movimentacoes: rawMovimentacoes.filter((m: any) => m && m.id && !deletedMovSet.has(m.id)),
+      deletedMovimentacaoIds,
+      defaultParams: parsed?.defaultParams || DEFAULT_STORE_DATA.defaultParams,
+    };
+  };
+
   try {
     if (fs.existsSync(DATA_FILE_PATH)) {
       const raw = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
-      const deletedOrcamentoIds = Array.isArray(parsed?.deletedOrcamentoIds)
-        ? parsed.deletedOrcamentoIds
-        : [];
-      const deletedSet = new Set(deletedOrcamentoIds);
-      const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
-      globalThis.__globalServerStore = {
-        profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : DEFAULT_STORE_DATA.profiles,
-        users: Array.isArray(parsed?.users) ? parsed.users : DEFAULT_STORE_DATA.users,
-        orcamentos: rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id)),
-        deletedOrcamentoIds,
-        defaultParams: parsed?.defaultParams || DEFAULT_STORE_DATA.defaultParams,
-      };
+      globalThis.__globalServerStore = buildFromParsed(parsed);
       return globalThis.__globalServerStore;
     }
   } catch {}
@@ -90,18 +119,7 @@ export function getGlobalStore(): ServerStoreData {
     if (fs.existsSync(BACKUP_FILE_PATH)) {
       const raw = fs.readFileSync(BACKUP_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw);
-      const deletedOrcamentoIds = Array.isArray(parsed?.deletedOrcamentoIds)
-        ? parsed.deletedOrcamentoIds
-        : [];
-      const deletedSet = new Set(deletedOrcamentoIds);
-      const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
-      globalThis.__globalServerStore = {
-        profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : DEFAULT_STORE_DATA.profiles,
-        users: Array.isArray(parsed?.users) ? parsed.users : DEFAULT_STORE_DATA.users,
-        orcamentos: rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id)),
-        deletedOrcamentoIds,
-        defaultParams: parsed?.defaultParams || DEFAULT_STORE_DATA.defaultParams,
-      };
+      globalThis.__globalServerStore = buildFromParsed(parsed);
       return globalThis.__globalServerStore;
     }
   } catch {}

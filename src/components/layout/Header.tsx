@@ -28,6 +28,33 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, activeTab }) =>
         </div>
       );
     }
+    if (activeTab === 'gestao-estoque-produtos') {
+      return (
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm">
+          <span className="text-slate-400">Gestão de Estoque</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-900 font-semibold">Cadastro de Produtos</span>
+        </div>
+      );
+    }
+    if (activeTab === 'gestao-estoque-movimentacoes') {
+      return (
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm">
+          <span className="text-slate-400">Gestão de Estoque</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-900 font-semibold">Movimentações</span>
+        </div>
+      );
+    }
+    if (activeTab === 'gestao-estoque-relatorios') {
+      return (
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm">
+          <span className="text-slate-400">Gestão de Estoque</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-900 font-semibold">Relatórios</span>
+        </div>
+      );
+    }
     if (activeTab === 'configuracoes-perfis') {
       return (
         <div className="flex items-center gap-1.5 text-xs sm:text-sm">
@@ -48,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar, activeTab }) =>
     }
     return (
       <span className="text-sm font-semibold text-slate-900 tracking-tight">
-        RN Precificação
+        RN Manutenção de Frota
       </span>
     );
   };

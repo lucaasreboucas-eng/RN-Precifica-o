@@ -40,7 +40,7 @@ export const Logo: React.FC<LogoProps> = ({
         {!imageFailed ? (
           <img
             src={logoSrc}
-            alt="RN Precificação Logo"
+            alt="RN Manutenção de Frota Logo"
             referrerPolicy="no-referrer"
             onError={() => setImageFailed(true)}
             className="relative w-full h-full object-contain rounded-xl drop-shadow-[0_4px_12px_rgba(212,175,55,0.25)] select-none"
@@ -115,14 +115,14 @@ export const Logo: React.FC<LogoProps> = ({
             >
               RN{' '}
               <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">
-                Precificação
+                Manutenção de Frota
               </span>
             </h1>
           </div>
           <p
             className={`font-medium tracking-widest uppercase text-slate-400 ${sizeDimensions.sub}`}
           >
-            Gestão &amp; Orçamentos
+            Sistema Integrado
           </p>
         </div>
       )}

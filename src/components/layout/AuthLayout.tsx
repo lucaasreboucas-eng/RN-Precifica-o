@@ -16,7 +16,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
         {!bgFailed ? (
           <img
             src={bgImageSrc}
-            alt="Ambiente RN Precificação"
+            alt="Ambiente RN Manutenção de Frota"
             referrerPolicy="no-referrer"
             onError={() => setBgFailed(true)}
             className="w-full h-full object-cover object-center opacity-30 mix-blend-luminosity scale-105"
@@ -52,7 +52,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
       {/* Bottom Footer */}
       <footer className="relative z-10 w-full py-4 text-center text-xs text-slate-400 border-t border-slate-800/40">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>&copy; {new Date().getFullYear()} RN Precificação. Todos os direitos reservados.</span>
+          <span>&copy; {new Date().getFullYear()} RN Manutenção de Frota. Todos os direitos reservados.</span>
           <div className="flex items-center gap-4 text-slate-400">
             <span>Privacidade</span>
             <span>·</span>

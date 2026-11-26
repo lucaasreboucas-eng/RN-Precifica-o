@@ -21,7 +21,7 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
           </div>
           <CardTitle className="text-2xl">{moduleName}</CardTitle>
           <CardDescription className="max-w-md mx-auto mt-2">
-            Este módulo faz parte do escopo da <strong className="text-white">Fase 2</strong>. Na etapa atual, a prioridade foi estabelecer a autenticação, segurança e o design system do RN Precificação.
+            Este módulo faz parte do escopo da <strong className="text-white">Fase 2</strong>. Na etapa atual, a prioridade foi estabelecer a autenticação, segurança e o design system do RN Manutenção de Frota.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4 pt-4">

@@ -18,7 +18,7 @@ export const ConfiguracoesPage: React.FC<ConfiguracoesPageProps> = ({ onOpenSupa
       <div>
         <h2 className="text-2xl font-bold text-white tracking-tight">Configurações do Ambiente</h2>
         <p className="text-sm text-slate-400 mt-1">
-          Gerenciamento de conexões, variáveis e credenciais do RN Precificação.
+          Gerenciamento de conexões, variáveis e credenciais do RN Manutenção de Frota.
         </p>
       </div>
 

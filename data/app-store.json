@@ -26,6 +26,10 @@
   ],
   "orcamentos": [],
   "deletedOrcamentoIds": [],
+  "produtos": [],
+  "deletedProdutoIds": [],
+  "movimentacoes": [],
+  "deletedMovimentacaoIds": [],
   "defaultParams": {
     "margemLucroPercent": 30,
     "impostoFaturamentoPercent": 6,

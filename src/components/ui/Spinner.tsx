@@ -39,7 +39,7 @@ export const FullPageLoader: React.FC<{ message?: string }> = ({
         </div>
       </div>
       <h4 className="text-base font-semibold text-slate-200">{message}</h4>
-      <p className="text-xs text-slate-500 mt-1">RN Precificação · Ambiente Seguro</p>
+      <p className="text-xs text-slate-500 mt-1">RN Manutenção de Frota · Ambiente Seguro</p>
     </div>
   );
 };

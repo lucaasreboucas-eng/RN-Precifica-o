@@ -8,6 +8,9 @@ import { PerfisView } from './components/settings/PerfisView';
 import { UsuariosView } from './components/settings/UsuariosView';
 import { GestaoPrecosView } from './components/pricing/GestaoPrecosView';
 import { OrcamentosView } from './components/pricing/OrcamentosView';
+import { GestaoEstoqueView } from './components/inventory/GestaoEstoqueView';
+import { CadastroProdutosView } from './components/inventory/CadastroProdutosView';
+import { MovimentacoesView } from './components/inventory/MovimentacoesView';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -27,6 +30,9 @@ const AppContent: React.FC = () => {
     <AppLayout activeTab={activeTab} onSelectTab={(tabId) => setActiveTab(tabId)}>
       {activeTab === 'gestao-precos-orcamentos' && <OrcamentosView />}
       {activeTab === 'gestao-precos' && <GestaoPrecosView />}
+      {activeTab === 'gestao-estoque-produtos' && <CadastroProdutosView />}
+      {activeTab === 'gestao-estoque-movimentacoes' && <MovimentacoesView />}
+      {activeTab === 'gestao-estoque-relatorios' && <GestaoEstoqueView subTab="relatorios" />}
       {activeTab === 'configuracoes-perfis' && <PerfisView />}
       {activeTab === 'configuracoes-usuarios' && <UsuariosView />}
     </AppLayout>

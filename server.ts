@@ -18,6 +18,10 @@ interface ServerStoreData {
   users: any[];
   orcamentos: any[];
   deletedOrcamentoIds: string[];
+  produtos: any[];
+  deletedProdutoIds: string[];
+  movimentacoes: any[];
+  deletedMovimentacaoIds: string[];
   defaultParams: {
     margemLucroPercent: number;
     impostoFaturamentoPercent: number;
@@ -56,6 +60,10 @@ const DEFAULT_STORE_DATA: ServerStoreData = {
   ],
   orcamentos: [],
   deletedOrcamentoIds: [],
+  produtos: [],
+  deletedProdutoIds: [],
+  movimentacoes: [],
+  deletedMovimentacaoIds: [],
   defaultParams: {
     margemLucroPercent: 30,
     impostoFaturamentoPercent: 6,
@@ -95,11 +103,29 @@ function sanitizeStoreData(parsed: any): ServerStoreData {
   const rawOrcamentos = Array.isArray(parsed?.orcamentos) ? parsed.orcamentos : [];
   const orcamentos = rawOrcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
 
+  const deletedProdutoIds: string[] = Array.isArray(parsed?.deletedProdutoIds)
+    ? parsed.deletedProdutoIds
+    : [];
+  const deletedProdSet = new Set(deletedProdutoIds);
+  const rawProdutos = Array.isArray(parsed?.produtos) ? parsed.produtos : [];
+  const produtos = rawProdutos.filter((p: any) => p && p.id && !deletedProdSet.has(p.id));
+
+  const deletedMovimentacaoIds: string[] = Array.isArray(parsed?.deletedMovimentacaoIds)
+    ? parsed.deletedMovimentacaoIds
+    : [];
+  const deletedMovSet = new Set(deletedMovimentacaoIds);
+  const rawMovimentacoes = Array.isArray(parsed?.movimentacoes) ? parsed.movimentacoes : [];
+  const movimentacoes = rawMovimentacoes.filter((m: any) => m && m.id && !deletedMovSet.has(m.id));
+
   return {
     profiles,
     users,
     orcamentos,
     deletedOrcamentoIds,
+    produtos,
+    deletedProdutoIds,
+    movimentacoes,
+    deletedMovimentacaoIds,
     defaultParams:
       parsed?.defaultParams && typeof parsed.defaultParams === 'object'
         ? { ...DEFAULT_STORE_DATA.defaultParams, ...parsed.defaultParams }
@@ -528,7 +554,17 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
 
   app.post('/api/store/sync', (req, res) => {
     const store = readStore();
-    const { profiles, users, orcamentos, defaultParams, deletedOrcamentoIds } = req.body || {};
+    const {
+      profiles,
+      users,
+      orcamentos,
+      defaultParams,
+      deletedOrcamentoIds,
+      produtos,
+      deletedProdutoIds,
+      movimentacoes,
+      deletedMovimentacaoIds,
+    } = req.body || {};
 
     if (!Array.isArray(store.deletedOrcamentoIds)) {
       store.deletedOrcamentoIds = [];
@@ -545,6 +581,42 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
     const deletedSet = new Set(store.deletedOrcamentoIds);
     // Guarantee that any orcamento whose ID was marked deleted is permanently removed
     store.orcamentos = store.orcamentos.filter((o: any) => o && o.id && !deletedSet.has(o.id));
+
+    if (!Array.isArray(store.produtos)) {
+      store.produtos = [];
+    }
+    if (!Array.isArray(store.deletedProdutoIds)) {
+      store.deletedProdutoIds = [];
+    }
+
+    if (Array.isArray(deletedProdutoIds)) {
+      for (const dId of deletedProdutoIds) {
+        if (dId && typeof dId === 'string' && !store.deletedProdutoIds.includes(dId)) {
+          store.deletedProdutoIds.push(dId);
+        }
+      }
+    }
+
+    const deletedProdSet = new Set(store.deletedProdutoIds);
+    store.produtos = store.produtos.filter((p: any) => p && p.id && !deletedProdSet.has(p.id));
+
+    if (!Array.isArray(store.movimentacoes)) {
+      store.movimentacoes = [];
+    }
+    if (!Array.isArray(store.deletedMovimentacaoIds)) {
+      store.deletedMovimentacaoIds = [];
+    }
+
+    if (Array.isArray(deletedMovimentacaoIds)) {
+      for (const dId of deletedMovimentacaoIds) {
+        if (dId && typeof dId === 'string' && !store.deletedMovimentacaoIds.includes(dId)) {
+          store.deletedMovimentacaoIds.push(dId);
+        }
+      }
+    }
+
+    const deletedMovSet = new Set(store.deletedMovimentacaoIds);
+    store.movimentacoes = store.movimentacoes.filter((m: any) => m && m.id && !deletedMovSet.has(m.id));
 
     if (Array.isArray(profiles)) {
       const existingIds = new Set(store.profiles.map((p: any) => p.id));
@@ -595,6 +667,38 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
           } else {
             store.orcamentos = store.orcamentos.map((item: any) =>
               item.id === o.id ? { ...item, ...o } : item
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(produtos)) {
+      const existingProdIds = new Set(store.produtos.map((p: any) => p.id));
+      for (const p of produtos) {
+        if (p && p.id && !deletedProdSet.has(p.id)) {
+          if (!existingProdIds.has(p.id)) {
+            store.produtos.unshift(p);
+            existingProdIds.add(p.id);
+          } else {
+            store.produtos = store.produtos.map((item: any) =>
+              item.id === p.id ? { ...item, ...p } : item
+            );
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(movimentacoes)) {
+      const existingMovIds = new Set(store.movimentacoes.map((m: any) => m.id));
+      for (const m of movimentacoes) {
+        if (m && m.id && !deletedMovSet.has(m.id)) {
+          if (!existingMovIds.has(m.id)) {
+            store.movimentacoes.unshift(m);
+            existingMovIds.add(m.id);
+          } else {
+            store.movimentacoes = store.movimentacoes.map((item: any) =>
+              item.id === m.id ? { ...item, ...m } : item
             );
           }
         }
@@ -688,6 +792,162 @@ Retorne apenas os itens reais da tabela de cotação (ignore linhas de cabeçalh
   app.delete('/api/store/orcamentos', (req, res) => {
     const id = req.query?.id || req.body?.id;
     performDeleteOrcamento(String(id || ''), res);
+  });
+
+  app.get('/api/store/produtos', (_req, res) => {
+    const store = readStore();
+    res.json({
+      produtos: store.produtos || [],
+      deletedProdutoIds: store.deletedProdutoIds || [],
+    });
+  });
+
+  app.put('/api/store/produtos', (req, res) => {
+    const store = readStore();
+    const deletedSet = new Set(store.deletedProdutoIds || []);
+    if (Array.isArray(req.body?.produtos)) {
+      store.produtos = req.body.produtos.filter((p: any) => p && p.id && !deletedSet.has(p.id));
+      writeStore(store);
+    }
+    res.json({
+      produtos: store.produtos,
+      deletedProdutoIds: store.deletedProdutoIds || [],
+    });
+  });
+
+  app.post('/api/store/produtos', (req, res) => {
+    const store = readStore();
+    const prod = req.body?.produto;
+    if (prod && prod.id) {
+      if (!Array.isArray(store.deletedProdutoIds)) {
+        store.deletedProdutoIds = [];
+      }
+      store.deletedProdutoIds = store.deletedProdutoIds.filter((dId) => dId !== prod.id);
+      if (!Array.isArray(store.produtos)) {
+        store.produtos = [];
+      }
+      const exists = store.produtos.some((it: any) => it.id === prod.id);
+      if (exists) {
+        store.produtos = store.produtos.map((it: any) =>
+          it.id === prod.id ? prod : it
+        );
+      } else {
+        store.produtos = [prod, ...store.produtos];
+      }
+      writeStore(store);
+    }
+    res.json({
+      produtos: store.produtos,
+      deletedProdutoIds: store.deletedProdutoIds || [],
+    });
+  });
+
+  const performDeleteProduto = (id: string, res: express.Response) => {
+    const store = readStore();
+    const cleanId = String(id || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ error: 'ID do produto não informado.' });
+    }
+    store.produtos = (store.produtos || []).filter((it: any) => it.id !== cleanId);
+    if (!Array.isArray(store.deletedProdutoIds)) {
+      store.deletedProdutoIds = [];
+    }
+    if (!store.deletedProdutoIds.includes(cleanId)) {
+      store.deletedProdutoIds.push(cleanId);
+    }
+    writeStore(store);
+    return res.json({
+      produtos: store.produtos,
+      deletedProdutoIds: store.deletedProdutoIds,
+    });
+  };
+
+  app.delete('/api/store/produtos/:id', (req, res) => {
+    performDeleteProduto(req.params.id, res);
+  });
+
+  app.delete('/api/store/produtos', (req, res) => {
+    const id = req.query?.id || req.body?.id;
+    performDeleteProduto(String(id || ''), res);
+  });
+
+  app.get('/api/store/movimentacoes', (_req, res) => {
+    const store = readStore();
+    res.json({
+      movimentacoes: store.movimentacoes || [],
+      deletedMovimentacaoIds: store.deletedMovimentacaoIds || [],
+    });
+  });
+
+  app.put('/api/store/movimentacoes', (req, res) => {
+    const store = readStore();
+    const deletedSet = new Set(store.deletedMovimentacaoIds || []);
+    if (Array.isArray(req.body?.movimentacoes)) {
+      store.movimentacoes = req.body.movimentacoes.filter(
+        (m: any) => m && m.id && !deletedSet.has(m.id)
+      );
+      writeStore(store);
+    }
+    res.json({
+      movimentacoes: store.movimentacoes,
+      deletedMovimentacaoIds: store.deletedMovimentacaoIds || [],
+    });
+  });
+
+  app.post('/api/store/movimentacoes', (req, res) => {
+    const store = readStore();
+    const mov = req.body?.movimentacao;
+    if (mov && mov.id) {
+      if (!Array.isArray(store.deletedMovimentacaoIds)) {
+        store.deletedMovimentacaoIds = [];
+      }
+      store.deletedMovimentacaoIds = store.deletedMovimentacaoIds.filter((dId) => dId !== mov.id);
+      if (!Array.isArray(store.movimentacoes)) {
+        store.movimentacoes = [];
+      }
+      const exists = store.movimentacoes.some((it: any) => it.id === mov.id);
+      if (exists) {
+        store.movimentacoes = store.movimentacoes.map((it: any) =>
+          it.id === mov.id ? mov : it
+        );
+      } else {
+        store.movimentacoes = [mov, ...store.movimentacoes];
+      }
+      writeStore(store);
+    }
+    res.json({
+      movimentacoes: store.movimentacoes,
+      deletedMovimentacaoIds: store.deletedMovimentacaoIds || [],
+    });
+  });
+
+  const performDeleteProdutoOrMov = (id: string, res: express.Response) => {
+    const store = readStore();
+    const cleanId = String(id || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ error: 'ID da movimentação não informado.' });
+    }
+    store.movimentacoes = (store.movimentacoes || []).filter((it: any) => it.id !== cleanId);
+    if (!Array.isArray(store.deletedMovimentacaoIds)) {
+      store.deletedMovimentacaoIds = [];
+    }
+    if (!store.deletedMovimentacaoIds.includes(cleanId)) {
+      store.deletedMovimentacaoIds.push(cleanId);
+    }
+    writeStore(store);
+    return res.json({
+      movimentacoes: store.movimentacoes,
+      deletedMovimentacaoIds: store.deletedMovimentacaoIds,
+    });
+  };
+
+  app.delete('/api/store/movimentacoes/:id', (req, res) => {
+    performDeleteProdutoOrMov(req.params.id, res);
+  });
+
+  app.delete('/api/store/movimentacoes', (req, res) => {
+    const id = req.query?.id || req.body?.id;
+    performDeleteProdutoOrMov(String(id || ''), res);
   });
 
   const handleUpdateDefaultParams = (req: express.Request, res: express.Response) => {

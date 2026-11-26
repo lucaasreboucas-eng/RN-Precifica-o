@@ -37,7 +37,7 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
-  doc.text('RN PRECIFICAÇÃO', 14, 13);
+  doc.text('RN MANUTENÇÃO DE FROTA', 14, 13);
 
   // Subtitle / Document Title
   doc.setFont('helvetica', 'normal');
@@ -286,7 +286,7 @@ export function generateResumoOrcamentoPdf(orcamento: Orcamento): GeneratedPdfRe
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(148, 163, 184); // Slate-400
-      const footerText = `RN Precificação • ${orcamento.osNumber} • Documento gerado em ${new Date().toLocaleString('pt-BR')}`;
+      const footerText = `RN Manutenção de Frota • ${orcamento.osNumber} • Documento gerado em ${new Date().toLocaleString('pt-BR')}`;
       doc.text(footerText, 14, pageHeight - 8);
 
       const pageStr = `Página ${data.pageNumber}`;
