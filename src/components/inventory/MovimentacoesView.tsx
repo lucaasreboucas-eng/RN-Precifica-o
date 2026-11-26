@@ -289,11 +289,62 @@ export const MovimentacoesView: React.FC = () => {
             }
 
             const deletedProdIds = getLocalDeletedSet(DELETED_PROD_KEY);
+            if (Array.isArray(data.deletedProdutoIds)) {
+              let updatedProdDel = false;
+              data.deletedProdutoIds.forEach((id: string) => {
+                if (typeof id === 'string' && id.trim() && !deletedProdIds.has(id)) {
+                  deletedProdIds.add(id);
+                  updatedProdDel = true;
+                }
+              });
+              if (updatedProdDel) saveLocalDeletedSet(DELETED_PROD_KEY, deletedProdIds);
+            }
+
             if (Array.isArray(data.produtos)) {
-              const freshProds: Produto[] = data.produtos.filter(
+              const freshServerProds: Produto[] = data.produtos.filter(
                 (p: any) => p && p.id && !deletedProdIds.has(p.id)
               );
-              setProdutosCadastrados(freshProds);
+              let localProds: Produto[] = [];
+              try {
+                const rawLocal = localStorage.getItem(PROD_STORAGE_KEY);
+                if (rawLocal) {
+                  const parsed = JSON.parse(rawLocal);
+                  if (Array.isArray(parsed)) {
+                    localProds = parsed.filter(
+                      (p: Produto) => p && p.id && !deletedProdIds.has(p.id)
+                    );
+                  }
+                }
+              } catch {}
+
+              setProdutosCadastrados((prev) => {
+                const mergedPrevAndLocal = new Map<string, Produto>();
+                prev.forEach((p) => {
+                  if (p && p.id && !deletedProdIds.has(p.id)) {
+                    mergedPrevAndLocal.set(p.id, p);
+                  }
+                });
+                localProds.forEach((p) => {
+                  if (p && p.id && !deletedProdIds.has(p.id)) {
+                    mergedPrevAndLocal.set(p.id, p);
+                  }
+                });
+                const filteredLocal = Array.from(mergedPrevAndLocal.values());
+                const serverIds = new Set(freshServerProds.map((p) => p.id));
+                const localOnly = filteredLocal.filter(
+                  (p) => !serverIds.has(p.id) && !deletedProdIds.has(p.id)
+                );
+                const combined = [...freshServerProds, ...localOnly];
+                const prevJson = JSON.stringify(prev);
+                const newJson = JSON.stringify(combined);
+                if (prevJson !== newJson) {
+                  try {
+                    localStorage.setItem(PROD_STORAGE_KEY, newJson);
+                  } catch {}
+                  return combined;
+                }
+                return prev;
+              });
             }
           }
         })
@@ -320,7 +371,14 @@ export const MovimentacoesView: React.FC = () => {
       if (raw) {
         const parsed: Produto[] = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          setProdutosCadastrados(parsed.filter((p) => p && p.id && !deletedIds.has(p.id)));
+          const validLocal = parsed.filter((p) => p && p.id && !deletedIds.has(p.id));
+          setProdutosCadastrados((prev) => {
+            const localIds = new Set(validLocal.map((p) => p.id));
+            const serverOnly = prev.filter(
+              (p) => p && p.id && !deletedIds.has(p.id) && !localIds.has(p.id)
+            );
+            return [...validLocal, ...serverOnly];
+          });
         }
       }
     } catch {}
@@ -713,8 +771,8 @@ export const MovimentacoesView: React.FC = () => {
           )}
 
           {/* 1.1. Identificação dos produtos & 1.2. Inclusão de múltiplos produtos */}
-          <Card variant="glass">
-            <CardHeader className="border-b border-slate-100 pb-3 bg-slate-50/50">
+          <Card variant="glass" className="overflow-visible">
+            <CardHeader className="border-b border-slate-100 pb-3 bg-slate-50/50 rounded-t-2xl">
               <CardTitle className="text-base text-slate-900 flex items-center gap-2">
                 <Package className="w-4 h-4 text-amber-600" />
                 <span>1. Identificação dos Produtos</span>
