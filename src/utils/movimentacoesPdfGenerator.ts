@@ -174,7 +174,7 @@ export function generateRelatorioMovimentacoesPdf(
   // 3. Listagem Sequencial das Movimentações Selecionadas
   movimentacoes.forEach((mov, idx) => {
     // Garante espaço mínimo para o cabeçalho da movimentação + tabela inicial sem quebrar órfão
-    if (currentY > pageHeight - 55) {
+    if (currentY > pageHeight - 62) {
       doc.addPage();
       currentY = 18;
     }
@@ -191,7 +191,21 @@ export function generateRelatorioMovimentacoesPdf(
 
     currentY += 3;
 
-    // Tabela de identificação (Data/Hora, Placa, Modelo, Responsável)
+    const vendedorNome = mov.responsavel?.trim() || 'Não informado';
+    const mecanicoNome = mov.mecanico?.trim() || 'Não informado';
+    const quemPegouLabel =
+      mov.quemPegou === 'vendedor'
+        ? 'Vendedor'
+        : mov.quemPegou === 'mecanico'
+        ? 'Mecânico'
+        : 'Não informado';
+
+    const vendedorDisplay =
+      mov.quemPegou === 'vendedor' ? `${vendedorNome} (Pegou a peça)` : vendedorNome;
+    const mecanicoDisplay =
+      mov.quemPegou === 'mecanico' ? `${mecanicoNome} (Pegou a peça)` : mecanicoNome;
+
+    // Tabela de identificação (Data/Hora, Placa, Modelo, Quem pegou, Vendedor, Mecânico)
     autoTable(doc, {
       startY: currentY,
       body: [
@@ -204,8 +218,31 @@ export function generateRelatorioMovimentacoesPdf(
         [
           { content: 'Modelo do Veículo', styles: { fontStyle: 'bold', textColor: [100, 116, 139], fillColor: [248, 250, 252] } },
           { content: mov.modeloVeiculo || 'Não informado', styles: { textColor: [15, 23, 42] } },
-          { content: 'Responsável', styles: { fontStyle: 'bold', textColor: [100, 116, 139], fillColor: [248, 250, 252] } },
-          { content: mov.responsavel || 'Não informado', styles: { fontStyle: 'bold', textColor: [15, 23, 42] } },
+          { content: 'Quem Pegou a Peça', styles: { fontStyle: 'bold', textColor: [100, 116, 139], fillColor: [248, 250, 252] } },
+          {
+            content: quemPegouLabel,
+            styles: mov.quemPegou
+              ? { fontStyle: 'bold', textColor: [146, 64, 14], fillColor: [254, 243, 199] }
+              : { textColor: [100, 116, 139] },
+          },
+        ],
+        [
+          { content: 'Vendedor', styles: { fontStyle: 'bold', textColor: [100, 116, 139], fillColor: [248, 250, 252] } },
+          {
+            content: vendedorDisplay,
+            styles:
+              mov.quemPegou === 'vendedor'
+                ? { fontStyle: 'bold', textColor: [146, 64, 14], fillColor: [254, 243, 199] }
+                : { fontStyle: 'bold', textColor: [15, 23, 42] },
+          },
+          { content: 'Mecânico', styles: { fontStyle: 'bold', textColor: [100, 116, 139], fillColor: [248, 250, 252] } },
+          {
+            content: mecanicoDisplay,
+            styles:
+              mov.quemPegou === 'mecanico'
+                ? { fontStyle: 'bold', textColor: [146, 64, 14], fillColor: [254, 243, 199] }
+                : { fontStyle: 'bold', textColor: [15, 23, 42] },
+          },
         ],
       ] as any,
       theme: 'grid',

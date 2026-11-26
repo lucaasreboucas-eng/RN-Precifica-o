@@ -149,6 +149,7 @@ export const RelatoriosView: React.FC = () => {
               .order('data_hora', { ascending: false });
 
             if (!error && Array.isArray(supMovs) && isMounted) {
+              const localMap = new Map(localMovs.map((m) => [m.id, m]));
               const mappedRemote: Movimentacao[] = supMovs
                 .filter((row: any) => row && row.id && !deletedIds.has(row.id))
                 .map((row: any) => ({
@@ -158,6 +159,8 @@ export const RelatoriosView: React.FC = () => {
                   placaVeiculo: row.placa_veiculo,
                   modeloVeiculo: row.modelo_veiculo,
                   responsavel: row.responsavel,
+                  mecanico: row.mecanico ?? localMap.get(row.id)?.mecanico,
+                  quemPegou: row.quem_pegou ?? localMap.get(row.id)?.quemPegou,
                   updatedAt: row.updated_at || undefined,
                 }));
 
